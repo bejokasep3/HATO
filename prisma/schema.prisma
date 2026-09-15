@@ -1,0 +1,153 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model Group {
+  id            String    @id @default(uuid()) @db.Uuid
+  name          String
+  level         Int       // 1 (anggota), 2 (sub-grup), 3 (grup/manajer), 4 (supplier)
+  parentGroupId String?   @map("parent_group_id") @db.Uuid
+  parentGroup   Group?    @relation("GroupHierarchy", fields: [parentGroupId], references: [id], onDelete: SetNull)
+  subGroups     Group[]   @relation("GroupHierarchy")
+  pjMemberId    String?   @map("pj_member_id") @db.Uuid
+  pjMember      Member?   @relation("GroupPJ", fields: [pjMemberId], references: [id], onDelete: SetNull)
+  members       Member[]  @relation("GroupMembers")
+  isActive      Boolean   @default(true) @map("is_active")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  @@index([level])
+  @@index([parentGroupId])
+  @@map("groups")
+}
+
+model Member {
+  id                String             @id @default(uuid()) @db.Uuid
+  name              String
+  phone             String
+  level             Int                // 1 (anggota), 2 (PJ/sub-grup), 3 (manajer)
+  groupId           String             @map("group_id") @db.Uuid
+  group             Group              @relation("GroupMembers", fields: [groupId], references: [id])
+  role              String             @default("anggota") // 'anggota', 'pj', 'pengurus'
+  isActive          Boolean            @default(true) @map("is_active")
+  createdAt         DateTime           @default(now()) @map("created_at")
+  updatedAt         DateTime           @updatedAt @map("updated_at")
+  pjOfGroups        Group[]            @relation("GroupPJ")
+  orders            Order[]
+  rotationSchedules RotationSchedule[]
+
+  @@index([groupId])
+  @@map("members")
+}
+
+model Product {
+  id             String        @id @default(uuid()) @db.Uuid
+  name           String
+  unit           String        // kg, bungkus, liter, pcs, etc.
+  isTarget       Boolean       @default(false) @map("is_target")
+  targetQuantity Decimal?      @map("target_quantity") @db.Decimal(10, 2)
+  category       String?
+  sortOrder      Int           @default(0) @map("sort_order")
+  isActive       Boolean       @default(true) @map("is_active")
+  createdAt      DateTime      @default(now()) @map("created_at")
+  updatedAt      DateTime      @updatedAt @map("updated_at")
+  weeklyPrices   WeeklyPrice[]
+  orderItems     OrderItem[]
+
+  @@map("products")
+}
+
+model Cycle {
+  id                String             @id @default(uuid()) @db.Uuid
+  label             String             // e.g. "Minggu 1 - Sep 2026"
+  periodStart       DateTime           @map("period_start") @db.Date
+  orderDeadline     DateTime           @map("order_deadline") @db.Date
+  deliveryDate      DateTime           @map("delivery_date") @db.Date
+  status            String             @default("draft") // draft, open, closed, delivered, completed
+  notes             String?            @db.Text
+  createdAt         DateTime           @default(now()) @map("created_at")
+  updatedAt         DateTime           @updatedAt @map("updated_at")
+  weeklyPrices      WeeklyPrice[]
+  rotationSchedules RotationSchedule[]
+  orders            Order[]
+
+  @@index([status])
+  @@index([periodStart, deliveryDate])
+  @@map("cycles")
+}
+
+model WeeklyPrice {
+  id            String   @id @default(uuid()) @db.Uuid
+  cycleId       String   @map("cycle_id") @db.Uuid
+  cycle         Cycle    @relation(fields: [cycleId], references: [id], onDelete: Cascade)
+  productId     String   @map("product_id") @db.Uuid
+  product       Product  @relation(fields: [productId], references: [id])
+  price         Decimal  @db.Decimal(12, 2) // Default/Fallback price
+  consumerPrice Decimal? @map("consumer_price") @db.Decimal(12, 2)
+  traderPrice   Decimal? @map("trader_price") @db.Decimal(12, 2)
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  @@unique([cycleId, productId])
+  @@map("weekly_prices")
+}
+
+model RotationSchedule {
+  id        String   @id @default(uuid()) @db.Uuid
+  cycleId   String   @map("cycle_id") @db.Uuid
+  cycle     Cycle    @relation(fields: [cycleId], references: [id], onDelete: Cascade)
+  memberId  String   @map("member_id") @db.Uuid
+  member    Member   @relation(fields: [memberId], references: [id])
+  status    String   @default("scheduled") // scheduled, ordered, skipped
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([cycleId, memberId])
+  @@index([cycleId])
+  @@index([memberId])
+  @@map("rotation_schedules")
+}
+
+model Order {
+  id            String      @id @default(uuid()) @db.Uuid
+  cycleId       String      @map("cycle_id") @db.Uuid
+  cycle         Cycle       @relation(fields: [cycleId], references: [id])
+  memberId      String      @map("member_id") @db.Uuid
+  member        Member      @relation(fields: [memberId], references: [id])
+  totalAmount   Decimal     @default(0) @map("total_amount") @db.Decimal(12, 2)
+  paymentStatus String      @default("unpaid") @map("payment_status") // unpaid, paid
+  orderStatus   String      @default("pending") @map("order_status") // pending, confirmed, shipped, delivered
+  notes         String?     @db.Text
+  paidAt        DateTime?   @map("paid_at")
+  createdAt     DateTime    @default(now()) @map("created_at")
+  updatedAt     DateTime    @updatedAt @map("updated_at")
+  items         OrderItem[]
+
+  @@unique([cycleId, memberId])
+  @@index([cycleId])
+  @@index([memberId])
+  @@index([paymentStatus])
+  @@index([orderStatus])
+  @@map("orders")
+}
+
+model OrderItem {
+  id        String   @id @default(uuid()) @db.Uuid
+  orderId   String   @map("order_id") @db.Uuid
+  order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId String   @map("product_id") @db.Uuid
+  product   Product  @relation(fields: [productId], references: [id])
+  priceType String   @default("consumer") @map("price_type") // 'consumer' | 'trader'
+  quantity  Decimal  @db.Decimal(10, 2)
+  unitPrice Decimal  @map("unit_price") @db.Decimal(12, 2)
+  subtotal  Decimal  @db.Decimal(12, 2)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@unique([orderId, productId, priceType])
+  @@index([orderId])
+  @@map("order_items")
+}
