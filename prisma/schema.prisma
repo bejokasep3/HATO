@@ -1,6 +1,7 @@
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 generator client {
@@ -46,18 +47,19 @@ model Member {
 }
 
 model Product {
-  id             String        @id @default(uuid()) @db.Uuid
-  name           String
-  unit           String        // kg, bungkus, liter, pcs, etc.
-  isTarget       Boolean       @default(false) @map("is_target")
-  targetQuantity Decimal?      @map("target_quantity") @db.Decimal(10, 2)
-  category       String?
-  sortOrder      Int           @default(0) @map("sort_order")
-  isActive       Boolean       @default(true) @map("is_active")
-  createdAt      DateTime      @default(now()) @map("created_at")
-  updatedAt      DateTime      @updatedAt @map("updated_at")
-  weeklyPrices   WeeklyPrice[]
-  orderItems     OrderItem[]
+  id                String              @id @default(uuid()) @db.Uuid
+  name              String
+  unit              String              // kg, bungkus, liter, pcs, etc.
+  isTarget          Boolean             @default(false) @map("is_target")
+  targetQuantity    Decimal?            @map("target_quantity") @db.Decimal(10, 2)
+  category          String?
+  sortOrder         Int                 @default(0) @map("sort_order")
+  isActive          Boolean             @default(true) @map("is_active")
+  createdAt         DateTime            @default(now()) @map("created_at")
+  updatedAt         DateTime            @updatedAt @map("updated_at")
+  weeklyPrices      WeeklyPrice[]
+  orderItems        OrderItem[]
+  goodsReceiptItems GoodsReceiptItem[]
 
   @@map("products")
 }
@@ -75,6 +77,7 @@ model Cycle {
   weeklyPrices      WeeklyPrice[]
   rotationSchedules RotationSchedule[]
   orders            Order[]
+  goodsReceipt      GoodsReceipt?
 
   @@index([status])
   @@index([periodStart, deliveryDate])
@@ -151,3 +154,37 @@ model OrderItem {
   @@index([orderId])
   @@map("order_items")
 }
+
+model GoodsReceipt {
+  id           String             @id @default(uuid()) @db.Uuid
+  cycleId      String             @unique @map("cycle_id") @db.Uuid
+  cycle        Cycle              @relation(fields: [cycleId], references: [id], onDelete: Cascade)
+  receivedAt   DateTime           @default(now()) @map("received_at")
+  supplierNote String?            @map("supplier_note") @db.Text
+  status       String             @default("draft") // draft, confirmed
+  createdAt    DateTime           @default(now()) @map("created_at")
+  updatedAt    DateTime           @updatedAt @map("updated_at")
+  items        GoodsReceiptItem[]
+
+  @@index([cycleId])
+  @@map("goods_receipts")
+}
+
+model GoodsReceiptItem {
+  id             String       @id @default(uuid()) @db.Uuid
+  goodsReceiptId String       @map("goods_receipt_id") @db.Uuid
+  goodsReceipt   GoodsReceipt @relation(fields: [goodsReceiptId], references: [id], onDelete: Cascade)
+  productId      String       @map("product_id") @db.Uuid
+  product        Product      @relation(fields: [productId], references: [id])
+  orderedQty     Decimal      @map("ordered_qty") @db.Decimal(10, 2)
+  receivedQty    Decimal      @map("received_qty") @db.Decimal(10, 2)
+  damagedQty     Decimal      @default(0) @map("damaged_qty") @db.Decimal(10, 2)
+  purchasePrice  Decimal      @default(0) @map("purchase_price") @db.Decimal(12, 2)
+  notes          String?      @db.Text
+  createdAt      DateTime     @default(now()) @map("created_at")
+
+  @@unique([goodsReceiptId, productId])
+  @@index([goodsReceiptId])
+  @@map("goods_receipt_items")
+}
+

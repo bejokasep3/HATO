@@ -63,11 +63,17 @@ export async function POST(request: NextRequest) {
           memberId: validated.memberId,
         },
       },
+      include: {
+        cycle: { select: { label: true } },
+        member: { select: { name: true } },
+      },
     })
 
     if (existingOrder) {
       return NextResponse.json(
-        { error: 'Anggota ini sudah memiliki pesanan di siklus ini.' },
+        {
+          error: `Anggota ${existingOrder.member?.name || 'ini'} sudah memiliki pesanan di siklus ${existingOrder.cycle?.label || 'ini'}.`,
+        },
         { status: 400 }
       )
     }

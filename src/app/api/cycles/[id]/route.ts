@@ -130,6 +130,16 @@ export async function PATCH(
     if (body.orderDeadline !== undefined) updateData.orderDeadline = new Date(body.orderDeadline)
     if (body.deliveryDate !== undefined) updateData.deliveryDate = new Date(body.deliveryDate)
 
+    if (body.status === 'open') {
+      await prisma.cycle.updateMany({
+        where: {
+          id: { not: id },
+          status: 'open',
+        },
+        data: { status: 'completed' },
+      })
+    }
+
     const updated = await prisma.cycle.update({
       where: { id },
       data: updateData,

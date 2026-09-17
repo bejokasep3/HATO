@@ -77,6 +77,13 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    if (validated.status === 'open') {
+      await prisma.cycle.updateMany({
+        where: { status: 'open' },
+        data: { status: 'completed' },
+      })
+    }
+
     const cycle = await prisma.cycle.create({
       data: validated,
     })

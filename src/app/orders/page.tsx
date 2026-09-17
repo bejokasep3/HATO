@@ -25,7 +25,13 @@ export default function OrdersPage() {
   const [loading, setLoading] = useState(true)
 
   // Filters
-  const [selectedCycleId, setSelectedCycleId] = useState<string>('')
+  const [selectedCycleId, setSelectedCycleId] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search)
+      return params.get('cycleId') || ''
+    }
+    return ''
+  })
   const [paymentFilter, setPaymentFilter] = useState<string>('')
 
   // Create / Edit Order Modal
@@ -37,6 +43,7 @@ export default function OrdersPage() {
   const [formNotes, setFormNotes] = useState('')
   const [formPaymentStatus, setFormPaymentStatus] = useState<string>('unpaid')
   const [formOrderStatus, setFormOrderStatus] = useState<string>('pending')
+  const [cycleOrderedMemberIds, setCycleOrderedMemberIds] = useState<Set<string>>(new Set())
   const [formItems, setFormItems] = useState<
     Array<{ productId: string; quantity: number; priceType: 'consumer' | 'trader' }>
   >([])
@@ -92,7 +99,7 @@ export default function OrdersPage() {
     fetchData()
   }, [selectedCycleId, paymentFilter])
 
-  // Check if editOrderId is provided in URL
+  // Check URL params for editOrderId or createOrder
   useEffect(() => {
     if (typeof window === 'undefined') return
     const params = new URLSearchParams(window.location.search)
@@ -102,35 +109,70 @@ export default function OrdersPage() {
       if (target) {
         handleOpenEditModal(target)
       }
+    } else if ((params.get('createOrder') === 'true' || params.get('newOrder') === 'true') && cycles.length > 0 && !modalOpen && !editingOrder) {
+      const cId = params.get('cycleId') || selectedCycleId
+      handleOpenCreateModal(cId)
     }
-  }, [orders])
+  }, [orders, cycles])
 
-  // When cycle changes in create/edit modal, load prices for that cycle
-  const handleFormCycleChange = async (cId: string) => {
+  // When cycle changes in create/edit modal, load prices and existing orders for that cycle
+  const handleFormCycleChange = async (cId: string, currentEditing: boolean = false) => {
     setFormCycleId(cId)
     if (!cId) return
     try {
-      const res = await fetch(`/api/cycles/${cId}/prices`)
-      const pricesData = await res.json()
+      const [pricesRes, ordersRes] = await Promise.all([
+        fetch(`/api/cycles/${cId}/prices`),
+        fetch(`/api/orders?cycleId=${cId}`),
+      ])
+      const [pricesData, ordersData] = await Promise.all([
+        pricesRes.json(),
+        ordersRes.json(),
+      ])
+
       const pMap = new Map<string, { consumer: number; trader: number }>()
-      pricesData.forEach((wp: any) => {
-        const consumer = wp.consumerPrice !== null ? Number(wp.consumerPrice) : Number(wp.price)
-        const trader = wp.traderPrice !== null ? Number(wp.traderPrice) : consumer
-        pMap.set(wp.productId, { consumer, trader })
-      })
+      if (Array.isArray(pricesData)) {
+        pricesData.forEach((wp: any) => {
+          const consumer = wp.consumerPrice !== null ? Number(wp.consumerPrice) : Number(wp.price)
+          const trader = wp.traderPrice !== null ? Number(wp.traderPrice) : consumer
+          pMap.set(wp.productId, { consumer, trader })
+        })
+      }
       setCyclePrices(pMap)
+
+      const orderedIds = new Set<string>()
+      if (Array.isArray(ordersData)) {
+        ordersData.forEach((o: any) => orderedIds.add(o.memberId))
+      }
+      setCycleOrderedMemberIds(orderedIds)
+
+      // When creating a new order, pick an available member who has not ordered in this cycle
+      if (!currentEditing && !editingOrder) {
+        setFormMemberId((currentMemberId) => {
+          if (currentMemberId && !orderedIds.has(currentMemberId)) {
+            return currentMemberId
+          }
+          const available = members.find((m) => !orderedIds.has(m.id))
+          return available ? available.id : (members[0]?.id || '')
+        })
+      }
     } catch (e) {
       console.error(e)
     }
   }
 
-  const handleOpenCreateModal = () => {
+  const handleOpenCreateModal = (targetCycleId?: string) => {
     setEditingOrder(null)
-    const defaultCycle = cycles.find((c) => c.status === 'open') || cycles[0]
-    if (defaultCycle) {
-      handleFormCycleChange(defaultCycle.id)
+    const activeCycleId = targetCycleId || (selectedCycleId && selectedCycleId !== '' ? selectedCycleId : '')
+    const defaultCycle =
+      (activeCycleId && cycles.find((c) => c.id === activeCycleId)) ||
+      cycles.find((c) => c.status === 'open') ||
+      cycles[0]
+
+    const chosenCycleId = defaultCycle?.id || ''
+    setFormCycleId(chosenCycleId)
+    if (chosenCycleId) {
+      handleFormCycleChange(chosenCycleId, false)
     }
-    setFormMemberId(members[0]?.id || '')
     setFormNotes('')
     setFormPaymentStatus('unpaid')
     setFormOrderStatus('pending')
@@ -146,7 +188,7 @@ export default function OrdersPage() {
   const handleOpenEditModal = (order: any) => {
     setEditingOrder(order)
     setFormCycleId(order.cycleId)
-    handleFormCycleChange(order.cycleId)
+    handleFormCycleChange(order.cycleId, true)
     setFormMemberId(order.memberId)
     setFormNotes(order.notes || '')
     setFormPaymentStatus(order.paymentStatus || 'unpaid')
@@ -302,7 +344,7 @@ export default function OrdersPage() {
           </p>
         </div>
         <button
-          onClick={handleOpenCreateModal}
+          onClick={() => handleOpenCreateModal()}
           className="inline-flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-medium px-4 py-2.5 rounded-lg text-sm transition-all shadow-xs shrink-0"
         >
           <PlusCircle className="w-4 h-4" />
@@ -532,32 +574,47 @@ export default function OrdersPage() {
                       required
                       value={formCycleId}
                       onChange={(e) => handleFormCycleChange(e.target.value)}
-                      className="w-full text-xs border border-slate-200 rounded-lg px-3 py-2 bg-white focus:outline-hidden focus:border-emerald-600"
+                      className="w-full text-xs border border-slate-200 rounded-lg px-3 py-2 bg-white focus:outline-hidden focus:border-emerald-600 font-medium"
                     >
                       {cycles.map((c) => (
                         <option key={c.id} value={c.id}>
-                          {c.label}
+                          {c.label} ({c.status.toUpperCase()})
                         </option>
                       ))}
                     </select>
                   </div>
 
                   <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">
-                      Pilih Anggota
-                    </label>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="block text-xs font-semibold text-slate-700">
+                        Pilih Anggota
+                      </label>
+                      {cycleOrderedMemberIds.size > 0 && (
+                        <span className="text-[10px] text-slate-500 font-medium">
+                          {Math.max(0, members.length - cycleOrderedMemberIds.size)}/{members.length} anggota belum pesan
+                        </span>
+                      )}
+                    </div>
                     <select
                       required
                       value={formMemberId}
                       onChange={(e) => setFormMemberId(e.target.value)}
-                      className="w-full text-xs border border-slate-200 rounded-lg px-3 py-2 bg-white focus:outline-hidden focus:border-emerald-600"
+                      className="w-full text-xs border border-slate-200 rounded-lg px-3 py-2 bg-white focus:outline-hidden focus:border-emerald-600 font-medium"
                     >
-                      {members.map((m) => (
-                        <option key={m.id} value={m.id}>
-                          {m.name} ({m.group?.name || '-'})
-                        </option>
-                      ))}
+                      {members.map((m) => {
+                        const alreadyOrdered = cycleOrderedMemberIds.has(m.id)
+                        return (
+                          <option key={m.id} value={m.id} disabled={alreadyOrdered}>
+                            {m.name} ({m.group?.name || '-'}) {alreadyOrdered ? '— [Sudah Ada Pesanan]' : ''}
+                          </option>
+                        )
+                      })}
                     </select>
+                    {members.length > 0 && cycleOrderedMemberIds.size >= members.length && (
+                      <p className="text-[11px] text-amber-600 mt-1">
+                        ⚠️ Semua anggota sudah memiliki pesanan di siklus ini.
+                      </p>
+                    )}
                   </div>
                 </div>
               )}

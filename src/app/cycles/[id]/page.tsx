@@ -20,6 +20,12 @@ import {
   MessageSquare,
   Plus,
   X,
+  ClipboardCheck,
+  ArrowRight,
+  TrendingUp,
+  Download,
+  RefreshCw,
+  ShieldCheck,
 } from 'lucide-react'
 import { formatCurrency, formatDate, getWhatsAppUrl } from '@/lib/utils'
 import { toast } from 'sonner'
@@ -29,7 +35,15 @@ export default function CycleDetailPage({ params }: { params: Promise<{ id: stri
   const router = useRouter()
   const [data, setData] = useState<any>(null)
   const [loading, setLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState<'recap' | 'orders' | 'rotation' | 'prices'>('recap')
+  const [activeTab, setActiveTab] = useState<'recap' | 'orders' | 'rotation' | 'prices' | 'inventory'>('recap')
+
+  // Goods Receipt / Inventory State
+  const [receipt, setReceipt] = useState<any>(null)
+  const [inventoryItems, setInventoryItems] = useState<any[]>([])
+  const [supplierNote, setSupplierNote] = useState<string>('')
+  const [loadingInventory, setLoadingInventory] = useState(false)
+  const [savingInventory, setSavingInventory] = useState(false)
+  const [copiedInventoryWA, setCopiedInventoryWA] = useState(false)
 
   // Prices editing state
   const [prices, setPrices] = useState<
@@ -95,9 +109,190 @@ export default function CycleDetailPage({ params }: { params: Promise<{ id: stri
     }
   }
 
+  const fetchInventory = async () => {
+    try {
+      setLoadingInventory(true)
+      const res = await fetch(`/api/inventory?cycleId=${id}`)
+      if (!res.ok) throw new Error('Gagal memuat data penerimaan barang')
+      const json = await res.json()
+      setReceipt(json.receipt)
+      setSupplierNote(json.receipt?.supplierNote || '')
+      setInventoryItems(json.items || [])
+    } catch (err: any) {
+      console.error(err)
+      toast.error(err.message || 'Gagal memuat data penerimaan barang')
+    } finally {
+      setLoadingInventory(false)
+    }
+  }
+
   useEffect(() => {
     fetchDetail()
+    if (typeof window !== 'undefined') {
+      const urlParams = new URLSearchParams(window.location.search)
+      const tabParam = urlParams.get('tab')
+      if (tabParam && ['recap', 'orders', 'rotation', 'prices', 'inventory'].includes(tabParam)) {
+        setActiveTab(tabParam as any)
+        if (tabParam === 'inventory') {
+          fetchInventory()
+        }
+      }
+    }
   }, [id])
+
+  useEffect(() => {
+    if (activeTab === 'inventory' && inventoryItems.length === 0 && !loadingInventory) {
+      fetchInventory()
+    }
+  }, [activeTab])
+
+  const handleInventoryItemChange = (idx: number, field: string, value: any) => {
+    const updated = [...inventoryItems]
+    const current = { ...updated[idx], [field]: value }
+
+    if (field === 'receivedQty' || field === 'purchasePrice') {
+      current.totalCost = Number(current.receivedQty) * Number(current.purchasePrice)
+      current.margin = Number(current.revenue) - current.totalCost
+    }
+    if (field === 'receivedQty') {
+      current.difference = Number(current.receivedQty) - Number(current.orderedQty)
+    }
+
+    updated[idx] = current
+    setInventoryItems(updated)
+  }
+
+  const totalInvOrderedQty = inventoryItems.reduce((sum, it) => sum + Number(it.orderedQty), 0)
+  const totalInvReceivedQty = inventoryItems.reduce((sum, it) => sum + Number(it.receivedQty), 0)
+  const totalInvDamagedQty = inventoryItems.reduce((sum, it) => sum + Number(it.damagedQty), 0)
+  const totalInvPurchaseCost = inventoryItems.reduce(
+    (sum, it) => sum + Number(it.purchasePrice) * Number(it.receivedQty),
+    0
+  )
+  const totalInvRevenue = inventoryItems.reduce((sum, it) => sum + Number(it.revenue), 0)
+  const invGrossMargin = totalInvRevenue - totalInvPurchaseCost
+  const invMarginPercentage = totalInvRevenue > 0 ? Math.round((invGrossMargin / totalInvRevenue) * 100) : 0
+  const invHasDiscrepancy = inventoryItems.some((it) => it.difference !== 0 || it.damagedQty > 0)
+
+  const handleSaveInventory = async (status: 'draft' | 'confirmed') => {
+    try {
+      setSavingInventory(true)
+      const payload = {
+        cycleId: id,
+        supplierNote,
+        status,
+        items: inventoryItems.map((it) => ({
+          productId: it.productId,
+          orderedQty: Number(it.orderedQty),
+          receivedQty: Number(it.receivedQty),
+          damagedQty: Number(it.damagedQty) || 0,
+          purchasePrice: Number(it.purchasePrice) || 0,
+          notes: it.notes || null,
+        })),
+      }
+
+      const res = await fetch('/api/inventory', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+
+      if (!res.ok) {
+        const errJson = await res.json()
+        throw new Error(errJson.error || 'Gagal menyimpan penerimaan barang')
+      }
+
+      toast.success(
+        status === 'confirmed'
+          ? 'Penerimaan barang berhasil dikonfirmasi!'
+          : 'Draf penerimaan barang berhasil disimpan!'
+      )
+      fetchInventory()
+      fetchDetail()
+    } catch (err: any) {
+      console.error(err)
+      toast.error(err.message || 'Terjadi kesalahan')
+    } finally {
+      setSavingInventory(false)
+    }
+  }
+
+  const handleCopyInventoryWA = () => {
+    if (!data?.cycle) return
+    let text = `📦 *LAPORAN PENERIMAAN BARANG (SIKLUS)*\n`
+    text += `*Siklus:* ${data.cycle.label}\n`
+    text += `*Tanggal Tiba:* ${formatDate(data.cycle.deliveryDate)}\n`
+    text += `*Status Penerimaan:* ${receipt?.status === 'confirmed' ? '✅ Terkonfirmasi' : '📝 Draf'}\n`
+    text += `------------------------------------\n`
+
+    inventoryItems.forEach((it) => {
+      const statusIcon = it.difference === 0 && it.damagedQty === 0 ? '✅' : '⚠️'
+      text += `${statusIcon} *${it.productName}*\n`
+      text += `   • Dipesan: ${it.orderedQty} ${it.unit}\n`
+      text += `   • Diterima: ${it.receivedQty} ${it.unit}\n`
+      if (it.damagedQty > 0) text += `   • Rusak/Susut: ${it.damagedQty} ${it.unit}\n`
+      if (it.difference !== 0) text += `   • Selisih: ${it.difference > 0 ? '+' : ''}${it.difference} ${it.unit}\n`
+      if (it.purchasePrice > 0) text += `   • HPP: ${formatCurrency(it.purchasePrice)} / ${it.unit}\n`
+      text += `\n`
+    })
+
+    text += `------------------------------------\n`
+    text += `*Total Modal (HPP):* ${formatCurrency(totalInvPurchaseCost)}\n`
+    text += `*Total Omzet Penjualan:* ${formatCurrency(totalInvRevenue)}\n`
+    text += `*Estimasi Margin Kotor:* ${formatCurrency(invGrossMargin)} (${invMarginPercentage}%)\n`
+    if (supplierNote) text += `*Catatan Supplier:* ${supplierNote}\n`
+
+    navigator.clipboard.writeText(text)
+    setCopiedInventoryWA(true)
+    setTimeout(() => setCopiedInventoryWA(false), 2000)
+    toast.success('Ringkasan berhasil disalin ke clipboard!')
+  }
+
+  const handleExportInventoryCSV = () => {
+    if (inventoryItems.length === 0) return
+    const headers = [
+      'Produk',
+      'Satuan',
+      'Kategori',
+      'Dipesan',
+      'Diterima',
+      'Rusak/Susut',
+      'Selisih',
+      'Harga Beli (HPP)',
+      'Total Modal',
+      'Omzet Penjualan',
+      'Margin Kotor',
+      'Catatan',
+    ]
+
+    const rows = inventoryItems.map((it) => [
+      `"${it.productName}"`,
+      `"${it.unit}"`,
+      `"${it.category || '-'}"`,
+      it.orderedQty,
+      it.receivedQty,
+      it.damagedQty,
+      it.difference,
+      it.purchasePrice,
+      it.purchasePrice * it.receivedQty,
+      it.revenue,
+      it.revenue - it.purchasePrice * it.receivedQty,
+      `"${it.notes || ''}"`,
+    ])
+
+    const csvContent =
+      'data:text/csv;charset=utf-8,' +
+      [headers.join(','), ...rows.map((r) => r.join(','))].join('\n')
+
+    const encodedUri = encodeURI(csvContent)
+    const link = document.createElement('a')
+    link.setAttribute('href', encodedUri)
+    link.setAttribute('download', `Penerimaan_Barang_${data?.cycle?.label || 'Siklus'}.csv`)
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    toast.success('File CSV berhasil diunduh!')
+  }
 
   const handleUpdateStatus = async (newStatus: string) => {
     try {
@@ -359,7 +554,7 @@ export default function CycleDetailPage({ params }: { params: Promise<{ id: stri
         </button>
         <button
           onClick={() => setActiveTab('prices')}
-          className={`flex items-center gap-2 px-4 py-3 text-sm font-semibold border-b-2 transition-all shrink-0 ${
+          className={`flex items-center gap-2 px-4 py-3 text-sm font-semibold border-b-2 transition-all shrink-0 cursor-pointer ${
             activeTab === 'prices'
               ? 'border-emerald-600 text-emerald-700 bg-emerald-50/50'
               : 'border-transparent text-slate-500 hover:text-slate-900'
@@ -367,6 +562,17 @@ export default function CycleDetailPage({ params }: { params: Promise<{ id: stri
         >
           <DollarSign className="w-4 h-4" />
           Harga Mingguan ({prices.length})
+        </button>
+        <button
+          onClick={() => setActiveTab('inventory')}
+          className={`flex items-center gap-2 px-4 py-3 text-sm font-semibold border-b-2 transition-all shrink-0 cursor-pointer ${
+            activeTab === 'inventory'
+              ? 'border-emerald-600 text-emerald-700 bg-emerald-50/50'
+              : 'border-transparent text-slate-500 hover:text-slate-900'
+          }`}
+        >
+          <ClipboardCheck className="w-4 h-4" />
+          Penerimaan Barang
         </button>
       </div>
 
@@ -485,7 +691,7 @@ export default function CycleDetailPage({ params }: { params: Promise<{ id: stri
               </p>
             </div>
             <Link
-              href={`/orders?cycleId=${cycle.id}`}
+              href={`/orders?cycleId=${cycle.id}&createOrder=true`}
               className="inline-flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-medium px-3.5 py-2 rounded-lg text-xs"
             >
               <ShoppingCart className="w-3.5 h-3.5" />
@@ -855,6 +1061,416 @@ export default function CycleDetailPage({ params }: { params: Promise<{ id: stri
                 ))}
               </tbody>
             </table>
+          </div>
+        </div>
+      )}
+
+      {/* TAB 5: PENERIMAAN BARANG (INVENTORY) */}
+      {activeTab === 'inventory' && (
+        <div className="space-y-6">
+          {/* Header & Quick Actions */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs">
+            <div>
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-xl bg-emerald-600/10 text-emerald-700 flex items-center justify-center">
+                  <ClipboardCheck className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base sm:text-lg font-bold text-slate-900">
+                    Penerimaan Barang Siklus {cycle.label}
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Pencatatan barang masuk dari Supplier Level 4, verifikasi kuantitas fisik, dan kalkulasi HPP.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                onClick={fetchInventory}
+                disabled={loadingInventory}
+                className="p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-xl border border-slate-200 transition-colors cursor-pointer"
+                title="Muat Ulang Data"
+              >
+                <RefreshCw className={`w-4 h-4 ${loadingInventory ? 'animate-spin' : ''}`} />
+              </button>
+
+              <button
+                onClick={handleCopyInventoryWA}
+                className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl transition-colors cursor-pointer"
+                title="Salin Ringkasan ke WhatsApp"
+              >
+                {copiedInventoryWA ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                {copiedInventoryWA ? 'Tersalin!' : 'Salin WA'}
+              </button>
+
+              <button
+                onClick={handleExportInventoryCSV}
+                className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl transition-colors cursor-pointer"
+                title="Ekspor CSV"
+              >
+                <Download className="w-3.5 h-3.5" />
+                CSV
+              </button>
+
+              <button
+                onClick={() => handleSaveInventory('draft')}
+                disabled={savingInventory}
+                className="inline-flex items-center gap-1.5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 font-semibold px-3 py-2 rounded-xl text-xs transition-colors cursor-pointer disabled:opacity-50"
+              >
+                <Save className="w-3.5 h-3.5" />
+                Simpan Draf
+              </button>
+
+              <button
+                onClick={() => handleSaveInventory('confirmed')}
+                disabled={savingInventory}
+                className="inline-flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold px-3.5 py-2 rounded-xl text-xs transition-colors shadow-xs cursor-pointer disabled:opacity-50"
+              >
+                <ShieldCheck className="w-3.5 h-3.5" />
+                Konfirmasi
+              </button>
+            </div>
+          </div>
+
+          {/* KPI Summary Cards */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            {/* Total Modal / HPP */}
+            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
+              <span className="text-xs font-semibold text-slate-500 block">Total Modal (HPP)</span>
+              <span className="text-lg sm:text-xl font-black text-slate-900 mt-1 block">
+                {formatCurrency(totalInvPurchaseCost)}
+              </span>
+              <span className="text-[11px] text-slate-400 mt-1 block">
+                Pembelian dari Supplier L4
+              </span>
+            </div>
+
+            {/* Total Omzet Penjualan */}
+            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
+              <span className="text-xs font-semibold text-slate-500 block">Total Omzet Penjualan</span>
+              <span className="text-lg sm:text-xl font-black text-emerald-700 mt-1 block">
+                {formatCurrency(totalInvRevenue)}
+              </span>
+              <span className="text-[11px] text-emerald-600 mt-1 block">
+                Harga tagihan pesanan anggota
+              </span>
+            </div>
+
+            {/* Estimasi Margin Kotor */}
+            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-slate-500">Margin Kotor</span>
+                <span
+                  className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                    invGrossMargin >= 0 ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'
+                  }`}
+                >
+                  {invMarginPercentage}%
+                </span>
+              </div>
+              <span
+                className={`text-lg sm:text-xl font-black mt-1 block ${
+                  invGrossMargin >= 0 ? 'text-slate-900' : 'text-rose-600'
+                }`}
+              >
+                {formatCurrency(invGrossMargin)}
+              </span>
+              <span className="text-[11px] text-slate-400 mt-1 block">Omzet dikurangi HPP</span>
+            </div>
+
+            {/* Status Fisik & Selisih */}
+            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-slate-500">Status Fisik</span>
+                <span
+                  className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                    receipt?.status === 'confirmed'
+                      ? 'bg-emerald-100 text-emerald-800'
+                      : 'bg-amber-100 text-amber-800'
+                  }`}
+                >
+                  {receipt?.status === 'confirmed' ? '✅ Terkonfirmasi' : '📝 Draf'}
+                </span>
+              </div>
+              <div className="mt-1 flex items-center gap-2">
+                <span className="text-sm font-bold text-slate-800">
+                  {totalInvReceivedQty} unit diterima
+                </span>
+              </div>
+              <span
+                className={`text-[11px] mt-1 block font-medium ${
+                  invHasDiscrepancy ? 'text-amber-600' : 'text-emerald-600'
+                }`}
+              >
+                {invHasDiscrepancy
+                  ? `⚠️ Ada selisih / ${totalInvDamagedQty} rusak`
+                  : '✅ Jumlah sesuai pesanan'}
+              </span>
+            </div>
+          </div>
+
+          {/* Main Table: Goods Receipt Breakdown */}
+          <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-2xs">
+            <div className="p-4 bg-slate-50/70 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <h4 className="font-bold text-slate-900 text-sm">
+                  Daftar Barang Diterima ({inventoryItems.length} Komoditas)
+                </h4>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Masukkan kuantitas fisik yang tiba hari Kamis, barang rusak/susut, dan harga modal per unit (HPP).
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => handleSaveInventory('draft')}
+                  disabled={savingInventory}
+                  className="inline-flex items-center gap-1.5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 font-semibold px-3 py-1.5 rounded-lg text-xs transition-colors cursor-pointer disabled:opacity-50"
+                >
+                  <Save className="w-3.5 h-3.5" />
+                  Simpan Draf
+                </button>
+
+                <button
+                  onClick={() => handleSaveInventory('confirmed')}
+                  disabled={savingInventory}
+                  className="inline-flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold px-3.5 py-1.5 rounded-lg text-xs transition-colors shadow-xs cursor-pointer disabled:opacity-50"
+                >
+                  <ShieldCheck className="w-3.5 h-3.5" />
+                  Konfirmasi
+                </button>
+              </div>
+            </div>
+
+            {loadingInventory ? (
+              <div className="flex items-center justify-center py-16">
+                <div className="w-8 h-8 border-3 border-emerald-600 border-t-transparent rounded-full animate-spin" />
+              </div>
+            ) : inventoryItems.length === 0 ? (
+              <div className="text-center py-12 text-slate-500 text-sm">
+                Belum ada data produk atau pesanan pada siklus ini.
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs sm:text-sm">
+                  <thead className="bg-slate-50 text-slate-500 text-[11px] uppercase font-semibold border-b border-slate-200">
+                    <tr>
+                      <th className="py-3 px-4">Komoditas</th>
+                      <th className="py-3 px-3 text-center">Dipesan</th>
+                      <th className="py-3 px-3 text-center min-w-[110px]">Diterima Fisik</th>
+                      <th className="py-3 px-3 text-center min-w-[90px]">Rusak/Susut</th>
+                      <th className="py-3 px-3 text-center">Selisih</th>
+                      <th className="py-3 px-3 min-w-[130px]">Harga Beli (HPP)</th>
+                      <th className="py-3 px-3 text-right">Total Modal</th>
+                      <th className="py-3 px-3 text-right">Omzet</th>
+                      <th className="py-3 px-3 text-right">Margin</th>
+                      <th className="py-3 px-4 min-w-[150px]">Catatan</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {inventoryItems.map((item, idx) => {
+                      const itemCost = Number(item.purchasePrice) * Number(item.receivedQty)
+                      const itemMargin = Number(item.revenue) - itemCost
+                      const diff = Number(item.receivedQty) - Number(item.orderedQty)
+
+                      return (
+                        <tr key={item.productId} className="hover:bg-slate-50/80 transition-colors">
+                          {/* Komoditas */}
+                          <td className="py-3 px-4">
+                            <div className="flex items-center gap-1.5">
+                              <span className="font-bold text-slate-900">{item.productName}</span>
+                              {item.isTarget && (
+                                <span className="text-[9px] bg-amber-100 text-amber-800 font-bold px-1 rounded">
+                                  TARGET
+                                </span>
+                              )}
+                            </div>
+                            <span className="text-[11px] text-slate-400 block">
+                              Satuan: {item.unit} {item.category ? `• ${item.category}` : ''}
+                            </span>
+                          </td>
+
+                          {/* Dipesan */}
+                          <td className="py-3 px-3 text-center font-bold text-slate-700">
+                            {item.orderedQty} {item.unit}
+                          </td>
+
+                          {/* Diterima Fisik */}
+                          <td className="py-3 px-3">
+                            <div className="flex items-center justify-center gap-1">
+                              <input
+                                type="number"
+                                step="any"
+                                min="0"
+                                value={item.receivedQty}
+                                onChange={(e) =>
+                                  handleInventoryItemChange(idx, 'receivedQty', parseFloat(e.target.value) || 0)
+                                }
+                                className="w-20 text-center font-bold text-xs border border-slate-200 rounded-lg py-1 px-1.5 focus:outline-hidden focus:border-emerald-600 bg-white"
+                              />
+                              <span className="text-[11px] text-slate-400">{item.unit}</span>
+                            </div>
+                          </td>
+
+                          {/* Rusak / Susut */}
+                          <td className="py-3 px-3">
+                            <div className="flex items-center justify-center gap-1">
+                              <input
+                                type="number"
+                                step="any"
+                                min="0"
+                                value={item.damagedQty}
+                                onChange={(e) =>
+                                  handleInventoryItemChange(idx, 'damagedQty', parseFloat(e.target.value) || 0)
+                                }
+                                className={`w-16 text-center font-bold text-xs border rounded-lg py-1 px-1.5 focus:outline-hidden focus:border-emerald-600 bg-white ${
+                                  item.damagedQty > 0
+                                    ? 'border-rose-300 text-rose-700 bg-rose-50/50'
+                                    : 'border-slate-200 text-slate-700'
+                                }`}
+                              />
+                              <span className="text-[11px] text-slate-400">{item.unit}</span>
+                            </div>
+                          </td>
+
+                          {/* Selisih */}
+                          <td className="py-3 px-3 text-center">
+                            <span
+                              className={`text-xs font-bold px-2 py-0.5 rounded-full inline-block ${
+                                diff === 0
+                                  ? 'bg-emerald-50 text-emerald-700'
+                                  : diff > 0
+                                  ? 'bg-blue-50 text-blue-700'
+                                  : 'bg-rose-50 text-rose-700'
+                              }`}
+                            >
+                              {diff === 0 ? '✅ Pas' : `${diff > 0 ? '+' : ''}${diff} ${item.unit}`}
+                            </span>
+                          </td>
+
+                          {/* Harga Beli / HPP */}
+                          <td className="py-3 px-3">
+                            <div className="flex items-center gap-1">
+                              <span className="text-xs text-slate-400 font-medium">Rp</span>
+                              <input
+                                type="number"
+                                step="100"
+                                min="0"
+                                value={item.purchasePrice}
+                                onChange={(e) =>
+                                  handleInventoryItemChange(idx, 'purchasePrice', parseFloat(e.target.value) || 0)
+                                }
+                                placeholder="0"
+                                className="w-24 text-right font-bold text-xs border border-slate-200 rounded-lg py-1 px-2 focus:outline-hidden focus:border-emerald-600 bg-white"
+                              />
+                            </div>
+                          </td>
+
+                          {/* Total Modal */}
+                          <td className="py-3 px-3 text-right font-bold text-slate-800">
+                            {formatCurrency(itemCost)}
+                          </td>
+
+                          {/* Omzet */}
+                          <td className="py-3 px-3 text-right font-semibold text-slate-700">
+                            {formatCurrency(item.revenue)}
+                          </td>
+
+                          {/* Margin */}
+                          <td
+                            className={`py-3 px-3 text-right font-bold ${
+                              itemMargin >= 0 ? 'text-emerald-700' : 'text-rose-700'
+                            }`}
+                          >
+                            {formatCurrency(itemMargin)}
+                          </td>
+
+                          {/* Catatan */}
+                          <td className="py-3 px-4">
+                            <input
+                              type="text"
+                              value={item.notes || ''}
+                              onChange={(e) => handleInventoryItemChange(idx, 'notes', e.target.value)}
+                              placeholder="Kondisi barang..."
+                              className="w-full text-xs border border-slate-200 rounded-lg py-1 px-2 focus:outline-hidden focus:border-emerald-600 bg-white"
+                            />
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+
+                  {/* Total Footer Row */}
+                  <tfoot className="bg-slate-50 font-bold text-xs text-slate-900 border-t-2 border-slate-200">
+                    <tr>
+                      <td className="py-3 px-4">TOTAL</td>
+                      <td className="py-3 px-3 text-center">{totalInvOrderedQty} unit</td>
+                      <td className="py-3 px-3 text-center">{totalInvReceivedQty} unit</td>
+                      <td className="py-3 px-3 text-center text-rose-700">
+                        {totalInvDamagedQty > 0 ? `${totalInvDamagedQty} rusak` : '-'}
+                      </td>
+                      <td className="py-3 px-3 text-center">
+                        {totalInvReceivedQty - totalInvOrderedQty === 0
+                          ? '✅ Klop'
+                          : `${totalInvReceivedQty - totalInvOrderedQty > 0 ? '+' : ''}${
+                              totalInvReceivedQty - totalInvOrderedQty
+                            } unit`}
+                      </td>
+                      <td className="py-3 px-3"></td>
+                      <td className="py-3 px-3 text-right text-slate-900 font-extrabold">
+                        {formatCurrency(totalInvPurchaseCost)}
+                      </td>
+                      <td className="py-3 px-3 text-right text-emerald-800 font-extrabold">
+                        {formatCurrency(totalInvRevenue)}
+                      </td>
+                      <td
+                        className={`py-3 px-3 text-right font-black ${
+                          invGrossMargin >= 0 ? 'text-emerald-700' : 'text-rose-700'
+                        }`}
+                      >
+                        {formatCurrency(invGrossMargin)}
+                      </td>
+                      <td className="py-3 px-4"></td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            )}
+
+            {/* Supplier Notes Section */}
+            <div className="p-4 bg-slate-50/50 border-t border-slate-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+              <div className="flex-1 w-full sm:max-w-xl">
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Catatan Khusus dari Supplier / Kondisi Pengiriman:
+                </label>
+                <textarea
+                  rows={2}
+                  value={supplierNote}
+                  onChange={(e) => setSupplierNote(e.target.value)}
+                  placeholder="Contoh: Pengiriman tiba pukul 09.30 WIB, telur ada retak 3 butir langsung diganti, dll."
+                  className="w-full text-xs border border-slate-200 rounded-lg p-2 bg-white focus:outline-hidden focus:border-emerald-600"
+                />
+              </div>
+
+              <div className="flex items-center gap-2 self-end sm:self-center">
+                <button
+                  onClick={() => handleSaveInventory('draft')}
+                  disabled={savingInventory}
+                  className="px-4 py-2 text-xs font-bold bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-xl transition-colors cursor-pointer disabled:opacity-50"
+                >
+                  Simpan Draf
+                </button>
+                <button
+                  onClick={() => handleSaveInventory('confirmed')}
+                  disabled={savingInventory}
+                  className="px-5 py-2 text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl transition-colors shadow-xs cursor-pointer disabled:opacity-50"
+                >
+                  Konfirmasi Penerimaan
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

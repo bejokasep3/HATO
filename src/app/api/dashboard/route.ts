@@ -33,10 +33,14 @@ export async function GET(request: NextRequest) {
       })
     }
 
-    // Default: prioritize 'open', then 'draft', then latest 'closed'
+    // Default: prioritize current/upcoming 'open' cycle, or cycle covering today's date
+    const now = new Date()
     if (!currentCycle) {
       currentCycle = await prisma.cycle.findFirst({
-        where: { status: 'open' },
+        where: {
+          status: 'open',
+          deliveryDate: { gte: now },
+        },
         orderBy: { periodStart: 'desc' },
         include: {
           weeklyPrices: {
@@ -47,7 +51,34 @@ export async function GET(request: NextRequest) {
 
       if (!currentCycle) {
         currentCycle = await prisma.cycle.findFirst({
-          where: { status: { in: ['draft', 'closed'] } },
+          where: {
+            periodStart: { lte: now },
+            deliveryDate: { gte: now },
+          },
+          orderBy: { periodStart: 'desc' },
+          include: {
+            weeklyPrices: {
+              include: { product: true },
+            },
+          },
+        })
+      }
+
+      if (!currentCycle) {
+        currentCycle = await prisma.cycle.findFirst({
+          where: { status: 'open' },
+          orderBy: { periodStart: 'desc' },
+          include: {
+            weeklyPrices: {
+              include: { product: true },
+            },
+          },
+        })
+      }
+
+      if (!currentCycle) {
+        currentCycle = await prisma.cycle.findFirst({
+          where: { status: { in: ['draft', 'closed', 'delivered', 'completed'] } },
           orderBy: { periodStart: 'desc' },
           include: {
             weeklyPrices: {
@@ -66,37 +97,130 @@ export async function GET(request: NextRequest) {
       })
     }
 
-    // 2. Get target products progress
-    const targetProducts = await prisma.product.findMany({
-      where: { isTarget: true, isActive: true },
-      orderBy: { sortOrder: 'asc' },
-    })
-
-    const orderItems = await prisma.orderItem.findMany({
+    // 2. Target Progress (Ayam Campur 20kg & Tahu Kuning 20 bks) with multi-cycle stock tracking
+    const allPriorCycles = await prisma.cycle.findMany({
       where: {
-        order: { cycleId: currentCycle.id },
+        periodStart: { lte: currentCycle.periodStart },
       },
-      include: { product: true },
+      orderBy: { periodStart: 'asc' },
+      include: {
+        orders: {
+          include: {
+            items: { include: { product: true } },
+          },
+        },
+        goodsReceipt: {
+          include: {
+            items: { include: { product: true } },
+          },
+        },
+      },
     })
 
-    const targetStats = targetProducts.map((prod) => {
-      const actualQty = orderItems
-        .filter((item) => item.productId === prod.id)
-        .reduce((sum, item) => sum + Number(item.quantity), 0)
+    let prevChickenLeftover = 0
+    let prevTofuLeftover = 0
 
-      const targetQty = Number(prod.targetQuantity || 0)
-      const percentage = targetQty > 0 ? Math.min(100, Math.round((actualQty / targetQty) * 100)) : 0
+    let currentChickenStats: any = null
+    let currentTofuStats: any = null
 
-      return {
-        id: prod.id,
-        name: prod.name,
-        unit: prod.unit,
-        targetQuantity: targetQty,
-        actualQuantity: actualQty,
-        percentage,
-        isMet: actualQty >= targetQty,
+    for (const c of allPriorCycles) {
+      const allItems = c.orders.flatMap((o) => o.items)
+
+      // Chicken (Karkas, Recah, Gebrus)
+      const karkas = allItems
+        .filter((it) => it.product.name.toLowerCase().includes('karkas'))
+        .reduce((sum, it) => sum + Number(it.quantity), 0)
+      const recah = allItems
+        .filter((it) => it.product.name.toLowerCase().includes('recah'))
+        .reduce((sum, it) => sum + Number(it.quantity), 0)
+      const gebrus = allItems
+        .filter((it) => it.product.name.toLowerCase().includes('gebrus'))
+        .reduce((sum, it) => sum + Number(it.quantity), 0)
+
+      const chickenSold = karkas + recah + gebrus
+      const chickenTarget = 20
+      const chickenBegStock = prevChickenLeftover
+      let chickenGoodsIn = Math.max(chickenTarget, chickenSold)
+      if (c.goodsReceipt) {
+        const rc = c.goodsReceipt.items
+          .filter((it) => {
+            const n = it.product.name.toLowerCase()
+            return n.includes('karkas') || n.includes('recah') || n.includes('gebrus')
+          })
+          .reduce((sum, it) => sum + Number(it.receivedQty), 0)
+        if (rc > 0) chickenGoodsIn = rc
       }
-    })
+      const chickenAvail = chickenBegStock + chickenGoodsIn
+      const chickenEndStock = Math.max(0, chickenAvail - chickenSold)
+      prevChickenLeftover = chickenEndStock
+
+      // Tofu (Kuning & Putih)
+      const tahuKuning = allItems
+        .filter((it) => {
+          const n = it.product.name.toLowerCase()
+          return n.includes('tahu') && (n.includes('kuning') || !n.includes('putih'))
+        })
+        .reduce((sum, it) => sum + Number(it.quantity), 0)
+      const tahuPutih = allItems
+        .filter((it) => {
+          const n = it.product.name.toLowerCase()
+          return n.includes('tahu') && n.includes('putih')
+        })
+        .reduce((sum, it) => sum + Number(it.quantity), 0)
+
+      const tofuSold = tahuKuning + tahuPutih
+      const tofuTarget = 20
+      const tofuBegStock = prevTofuLeftover
+      let tofuGoodsIn = Math.max(tofuTarget, tofuSold)
+      if (c.goodsReceipt) {
+        const rt = c.goodsReceipt.items
+          .filter((it) => it.product.name.toLowerCase().includes('tahu'))
+          .reduce((sum, it) => sum + Number(it.receivedQty), 0)
+        if (rt > 0) tofuGoodsIn = rt
+      }
+      const tofuAvail = tofuBegStock + tofuGoodsIn
+      const tofuEndStock = Math.max(0, tofuAvail - tofuSold)
+      prevTofuLeftover = tofuEndStock
+
+      if (c.id === currentCycle.id) {
+        currentChickenStats = {
+          id: 'target-ayam-campur',
+          name: 'Ayam Campur (Karkas, Recah, Gebrus)',
+          unit: 'kg',
+          targetQuantity: chickenTarget,
+          actualQuantity: chickenSold,
+          beginningStock: chickenBegStock,
+          goodsIn: chickenGoodsIn,
+          unsoldStock: chickenEndStock,
+          percentage: Math.round((chickenSold / chickenTarget) * 100),
+          isMet: chickenSold >= chickenTarget,
+          breakdown: [
+            { name: 'Karkas', quantity: karkas },
+            { name: 'Recah', quantity: recah },
+            { name: 'Gebrus', quantity: gebrus },
+          ],
+        }
+
+        currentTofuStats = {
+          id: 'target-tahu-campur',
+          name: 'Tahu Campur (Kuning & Putih)',
+          unit: 'bungkus',
+          targetQuantity: tofuTarget,
+          actualQuantity: tofuSold,
+          beginningStock: tofuBegStock,
+          goodsIn: tofuGoodsIn,
+          unsoldStock: tofuEndStock,
+          percentage: Math.round((tofuSold / tofuTarget) * 100),
+          isMet: tofuSold >= tofuTarget,
+          breakdown: [
+            { name: 'Tahu Kuning', quantity: tahuKuning },
+            { name: 'Tahu Putih', quantity: tahuPutih },
+          ],
+        }
+      }
+    }
+
+    const targetStats = [currentChickenStats, currentTofuStats].filter(Boolean)
 
     // 3. Payment & Orders summary
     const orders = await prisma.order.findMany({

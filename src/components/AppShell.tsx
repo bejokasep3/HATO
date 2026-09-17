@@ -7,6 +7,8 @@ import {
   LayoutDashboard,
   Repeat,
   ShoppingCart,
+  ClipboardCheck,
+  BarChart3,
   Users,
   Building2,
   Package,
@@ -27,8 +29,8 @@ const navItems = [
   { href: '/', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/cycles', label: 'Siklus Pesanan', icon: Repeat },
   { href: '/orders', label: 'Pesanan', icon: ShoppingCart },
-  { href: '/members', label: 'Anggota', icon: Users },
-  { href: '/groups', label: 'Sub-Grup', icon: Building2 },
+  { href: '/members', label: 'Komunitas', icon: Users },
+  { href: '/reports', label: 'Laporan', icon: BarChart3 },
   { href: '/products', label: 'Katalog Produk', icon: Package },
   { href: '/ranking', label: 'Peringkat & Skor', icon: Trophy },
 ]
@@ -59,6 +61,8 @@ export function AppShell({ children }: AppShellProps) {
             const isActive =
               item.href === '/'
                 ? pathname === '/'
+                : item.href === '/members'
+                ? pathname.startsWith('/members') || pathname.startsWith('/groups')
                 : pathname.startsWith(item.href)
 
             return (
@@ -118,6 +122,8 @@ export function AppShell({ children }: AppShellProps) {
             const isActive =
               item.href === '/'
                 ? pathname === '/'
+                : item.href === '/members'
+                ? pathname.startsWith('/members') || pathname.startsWith('/groups')
                 : pathname.startsWith(item.href)
 
             return (

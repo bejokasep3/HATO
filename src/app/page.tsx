@@ -50,6 +50,13 @@ interface DashboardData {
     actualQuantity: number
     percentage: number
     isMet: boolean
+    beginningStock?: number
+    goodsIn?: number
+    unsoldStock?: number
+    breakdown?: Array<{
+      name: string
+      quantity: number
+    }>
   }>
   rotation?: {
     scheduledCount: number
@@ -363,6 +370,30 @@ export default function DashboardPage() {
                     }`}
                     style={{ width: `${Math.min(100, target.percentage)}%` }}
                   />
+                </div>
+
+                {/* Variant Breakdown (For Ayam Campur & Tahu Campur) */}
+                {target.breakdown && (
+                  <div className="flex flex-wrap items-center gap-1.5 pt-1.5">
+                    {target.breakdown.map((b: any) => (
+                      <span
+                        key={b.name}
+                        className="text-[11px] font-medium bg-slate-100 text-slate-700 px-2 py-0.5 rounded-md"
+                      >
+                        {b.name}: <strong className="font-bold text-slate-900">{b.quantity} {target.unit}</strong>
+                      </span>
+                    ))}
+                  </div>
+                )}
+
+                {/* Stock Carryover & Leftover Info */}
+                <div className="pt-2 mt-2 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
+                  <span>
+                    Stok awal lalu: <strong className="text-slate-700">{target.beginningStock || 0} {target.unit}</strong>
+                  </span>
+                  <span className={(target.unsoldStock ?? 0) > 0 ? 'text-amber-700 font-semibold' : 'text-slate-700'}>
+                    Sisa belum terjual: <strong>{target.unsoldStock ?? 0} {target.unit}</strong>
+                  </span>
                 </div>
               </div>
             </div>
