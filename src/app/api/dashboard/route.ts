@@ -97,25 +97,44 @@ export async function GET(request: NextRequest) {
       })
     }
 
-    // 2. Target Progress (Ayam Campur 20kg & Tahu Kuning 20 bks) with multi-cycle stock tracking
-    const allPriorCycles = await prisma.cycle.findMany({
-      where: {
-        periodStart: { lte: currentCycle.periodStart },
-      },
-      orderBy: { periodStart: 'asc' },
-      include: {
-        orders: {
-          include: {
-            items: { include: { product: true } },
+    // Fetch targets, orders, rotation schedules, and total members concurrently
+    const [allPriorCycles, orders, rotationSchedules, totalMembers] = await Promise.all([
+      prisma.cycle.findMany({
+        where: {
+          periodStart: { lte: currentCycle.periodStart },
+        },
+        orderBy: { periodStart: 'asc' },
+        include: {
+          orders: {
+            include: {
+              items: { include: { product: true } },
+            },
+          },
+          goodsReceipt: {
+            include: {
+              items: { include: { product: true } },
+            },
           },
         },
-        goodsReceipt: {
-          include: {
-            items: { include: { product: true } },
+      }),
+      prisma.order.findMany({
+        where: { cycleId: currentCycle.id },
+        include: {
+          member: { include: { group: true } },
+          items: { include: { product: true } },
+        },
+        orderBy: { createdAt: 'desc' },
+      }),
+      prisma.rotationSchedule.findMany({
+        where: { cycleId: currentCycle.id },
+        include: {
+          member: {
+            include: { group: true },
           },
         },
-      },
-    })
+      }),
+      prisma.member.count({ where: { isActive: true } }),
+    ])
 
     let prevChickenLeftover = 0
     let prevTofuLeftover = 0
@@ -222,41 +241,27 @@ export async function GET(request: NextRequest) {
 
     const targetStats = [currentChickenStats, currentTofuStats].filter(Boolean)
 
-    // 3. Payment & Orders summary
-    const orders = await prisma.order.findMany({
-      where: { cycleId: currentCycle.id },
-      include: {
-        member: { include: { group: true } },
-        items: { include: { product: true } },
-      },
-      orderBy: { createdAt: 'desc' },
-    })
-
     const orderedMemberIds = new Set(orders.map((o) => o.memberId))
 
-    // 4. Get rotation progress (synced with actual orders)
-    const rotationSchedules = await prisma.rotationSchedule.findMany({
-      where: { cycleId: currentCycle.id },
-      include: {
-        member: {
-          include: { group: true },
-        },
-      },
-    })
-
     // Dynamically mark and persist as 'ordered' if member already placed an order
+    const scheduleUpdates: Promise<any>[] = []
     for (const r of rotationSchedules) {
       if (orderedMemberIds.has(r.memberId)) {
         if (r.status !== 'ordered') {
           r.status = 'ordered'
-          prisma.rotationSchedule
-            .update({
-              where: { id: r.id },
-              data: { status: 'ordered' },
-            })
-            .catch(() => {})
+          scheduleUpdates.push(
+            prisma.rotationSchedule
+              .update({
+                where: { id: r.id },
+                data: { status: 'ordered' },
+              })
+              .catch(() => {})
+          )
         }
       }
+    }
+    if (scheduleUpdates.length > 0) {
+      await Promise.all(scheduleUpdates)
     }
 
     const scheduledCount = rotationSchedules.length
@@ -295,9 +300,6 @@ export async function GET(request: NextRequest) {
     const unpaidAmount = totalBilling - paidAmount
     const paidCount = orders.filter((o) => o.paymentStatus === 'paid').length
     const unpaidCount = orders.length - paidCount
-
-    // 5. Total active members
-    const totalMembers = await prisma.member.count({ where: { isActive: true } })
 
     return NextResponse.json({
       hasCycle: true,
