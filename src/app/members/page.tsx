@@ -4,7 +4,7 @@ import React, { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   Users,
-  PlusCircle,
+  Plus,
   Search,
   MessageSquare,
   X,
@@ -17,6 +17,8 @@ import {
 } from 'lucide-react'
 import { getWhatsAppUrl } from '@/lib/utils'
 import { toast } from 'sonner'
+import { Button } from '@/components/ui/Button'
+import { Badge } from '@/components/ui/Badge'
 
 interface MemberItem {
   id: string
@@ -368,45 +370,50 @@ export default function CommunityPage() {
     : allMembers
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+    <div className="space-y-6 max-w-7xl mx-auto">
+      {/* Header Command Bar */}
+      <div className="bg-white border border-slate-200/90 rounded-2xl p-5 sm:p-6 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Komunitas & Struktur Grup</h1>
-          <p className="text-sm text-slate-500 mt-1">
-            Kelola data anggota komunitas (Level 1) dan penanggung jawab Sub-Grup (Level 2).
+          <div className="flex items-center gap-2.5 flex-wrap mb-1">
+            <h1 className="text-2xl font-extrabold text-slate-900 tracking-tight">Komunitas & Struktur Grup</h1>
+            <span className="text-xs font-semibold text-emerald-800 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200/60 tabular-nums">
+              {members.length} Anggota • {subGroups.length} Sub-Grup
+            </span>
+          </div>
+          <p className="text-xs text-slate-500 max-w-2xl">
+            Kelola data anggota komunitas (Level 1), penanggung jawab Sub-Grup (Level 2), dan koordinasi distribusi.
           </p>
         </div>
 
         <div>
           {activeTab === 'members' ? (
-            <button
+            <Button
+              variant="primary"
               onClick={handleOpenCreateMemberModal}
-              className="inline-flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-medium px-4 py-2.5 rounded-xl text-sm transition-all shadow-xs cursor-pointer shrink-0"
+              icon={<Plus className="w-4 h-4" />}
             >
-              <PlusCircle className="w-4 h-4" />
               Tambah Anggota Baru
-            </button>
+            </Button>
           ) : (
-            <button
+            <Button
+              variant="primary"
               onClick={handleOpenCreateGroupModal}
-              className="inline-flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-medium px-4 py-2.5 rounded-xl text-sm transition-all shadow-xs cursor-pointer shrink-0"
+              icon={<Plus className="w-4 h-4" />}
             >
-              <PlusCircle className="w-4 h-4" />
               Tambah Sub-Grup Baru
-            </button>
+            </Button>
           )}
         </div>
       </div>
 
-      {/* Segmented Tab Switcher */}
-      <div className="flex border-b border-slate-200 gap-2">
+      {/* Tactile Segmented Tab Switcher */}
+      <div className="inline-flex bg-slate-100/90 p-1 rounded-2xl border border-slate-200/80 gap-1 overflow-x-auto w-full sm:w-auto">
         <button
           onClick={() => handleTabChange('members')}
-          className={`flex items-center gap-2 px-4 py-3 text-sm font-semibold border-b-2 transition-all cursor-pointer ${
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
             activeTab === 'members'
-              ? 'border-emerald-600 text-emerald-700 bg-emerald-50/50'
-              : 'border-transparent text-slate-500 hover:text-slate-900'
+              ? 'bg-white text-emerald-900 shadow-xs border border-slate-200/60'
+              : 'text-slate-600 hover:text-slate-900'
           }`}
         >
           <Users className="w-4 h-4" />
@@ -414,10 +421,10 @@ export default function CommunityPage() {
         </button>
         <button
           onClick={() => handleTabChange('groups')}
-          className={`flex items-center gap-2 px-4 py-3 text-sm font-semibold border-b-2 transition-all cursor-pointer ${
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
             activeTab === 'groups'
-              ? 'border-emerald-600 text-emerald-700 bg-emerald-50/50'
-              : 'border-transparent text-slate-500 hover:text-slate-900'
+              ? 'bg-white text-emerald-900 shadow-xs border border-slate-200/60'
+              : 'text-slate-600 hover:text-slate-900'
           }`}
         >
           <Building2 className="w-4 h-4" />
@@ -467,7 +474,7 @@ export default function CommunityPage() {
           </div>
 
           {/* Members Table */}
-          <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-xs">
+          <div className="bg-white rounded-2xl border border-slate-200/90 overflow-hidden shadow-xs">
             {loading ? (
               <div className="flex items-center justify-center min-h-[30vh]">
                 <div className="w-8 h-8 border-3 border-emerald-600 border-t-transparent rounded-full animate-spin" />
@@ -498,7 +505,12 @@ export default function CommunityPage() {
                         title="Klik untuk melihat detail / mengedit data anggota"
                       >
                         <td className="py-3.5 px-4 font-bold text-slate-900">
-                          <span className="hover:text-emerald-700 transition-colors">{m.name}</span>
+                          <div className="flex items-center gap-2.5">
+                            <div className="w-7 h-7 rounded-full bg-slate-100 border border-slate-200/80 flex items-center justify-center font-bold text-[11px] text-slate-700 shrink-0">
+                              {m.name.charAt(0).toUpperCase()}
+                            </div>
+                            <span className="hover:text-emerald-700 transition-colors">{m.name}</span>
+                          </div>
                         </td>
                         <td className="py-3.5 px-4 text-xs text-slate-600">{m.group?.name || '-'}</td>
                         <td className="py-3.5 px-4">
@@ -512,10 +524,10 @@ export default function CommunityPage() {
                             }`}
                           >
                             {m.role === 'pj' && <ShieldCheck className="w-3.5 h-3.5" />}
-                            {m.role.toUpperCase()} (L{m.level})
+                            {m.role === 'pj' ? 'PJ Sub-Grup (L2)' : m.role === 'pengurus' ? 'Pengurus (L3)' : 'Anggota (L1)'}
                           </span>
                         </td>
-                        <td className="py-3.5 px-4 text-xs font-semibold text-slate-700">
+                        <td className="py-3.5 px-4 text-xs font-semibold text-slate-700 tabular-nums">
                           {m._count?.orders || 0} kali
                         </td>
                         <td className="py-3.5 px-4 text-center">
@@ -559,19 +571,22 @@ export default function CommunityPage() {
       {activeTab === 'groups' && (
         <div className="space-y-6">
           {rootGroup && (
-            <div className="bg-emerald-800 text-white p-5 rounded-2xl flex items-center justify-between shadow-xs">
+            <div className="bg-emerald-900 border border-emerald-800 text-white p-5 rounded-2xl flex items-center justify-between shadow-xs">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-emerald-700 flex items-center justify-center text-white">
+                <div className="w-10 h-10 rounded-xl bg-emerald-800 flex items-center justify-center text-white border border-emerald-700/60">
                   <Building2 className="w-5 h-5" />
                 </div>
                 <div>
-                  <span className="text-xs text-emerald-200 font-semibold uppercase tracking-wider block">
-                    Level 3 (Pusat Distribusi Manajer)
-                  </span>
-                  <h2 className="text-lg font-bold">{rootGroup.name}</h2>
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-lg font-extrabold text-white tracking-tight">{rootGroup.name}</h2>
+                    <span className="text-[11px] font-semibold text-emerald-200 bg-emerald-800/80 px-2 py-0.5 rounded border border-emerald-700/50">
+                      Grup Manajer (L3)
+                    </span>
+                  </div>
+                  <p className="text-xs text-emerald-100/70 mt-0.5">Pusat koordinasi rekapitulasi ke Supplier Level 4</p>
                 </div>
               </div>
-              <span className="text-xs bg-emerald-700/80 border border-emerald-600 px-3 py-1 rounded-full font-medium">
+              <span className="text-xs bg-emerald-800/80 border border-emerald-700 px-3 py-1 rounded-full font-medium tabular-nums">
                 {subGroups.length} Sub-Grup Terkoordinasi
               </span>
             </div>

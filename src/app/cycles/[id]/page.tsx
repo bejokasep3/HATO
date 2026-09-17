@@ -481,97 +481,111 @@ export default function CycleDetailPage({ params }: { params: Promise<{ id: stri
   const rotation = cycle.rotationSchedules || []
 
   return (
-    <div className="space-y-6">
-      {/* Back Button & Title Header */}
-      <div>
-        <Link
-          href="/cycles"
-          className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-500 hover:text-slate-800 mb-2 transition-colors"
-        >
-          <ArrowLeft className="w-3.5 h-3.5" />
-          Kembali ke Semua Siklus
-        </Link>
+    <div className="space-y-6 max-w-7xl mx-auto">
+      {/* Master Detail Command Header */}
+      <div className="bg-white border border-slate-200/90 rounded-2xl p-5 sm:p-6 shadow-xs">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-extrabold text-slate-900 tracking-tight">{cycle.label}</h1>
-            <p className="text-xs text-slate-500 mt-0.5">
-              Mulai: {formatDate(cycle.periodStart)} • Deadline: {formatDate(cycle.orderDeadline)} • Pengiriman: {formatDate(cycle.deliveryDate)}
+            <Link
+              href="/cycles"
+              className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-500 hover:text-emerald-700 mb-2 transition-colors"
+            >
+              <ArrowLeft className="w-3.5 h-3.5" />
+              Kembali ke Semua Siklus
+            </Link>
+            <div className="flex items-center gap-2.5 flex-wrap">
+              <h1 className="text-2xl font-extrabold text-slate-900 tracking-tight">{cycle.label}</h1>
+              <span
+                className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 text-xs font-bold rounded-full border ${
+                  cycle.status === 'open'
+                    ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                    : cycle.status === 'draft'
+                    ? 'bg-amber-50 text-amber-800 border-amber-200'
+                    : 'bg-slate-100 text-slate-700 border-slate-200'
+                }`}
+              >
+                {cycle.status === 'open' && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />}
+                {cycle.status === 'open' ? 'Buka (Aktif)' : cycle.status === 'draft' ? 'Draf' : 'Selesai'}
+              </span>
+            </div>
+            <p className="text-xs text-slate-500 mt-1">
+              Mulai: <strong className="text-slate-700 tabular-nums">{formatDate(cycle.periodStart)}</strong> • Deadline Rekap: <strong className="text-amber-800 tabular-nums">{formatDate(cycle.orderDeadline)}</strong> • Tiba: <strong className="text-slate-700 tabular-nums">{formatDate(cycle.deliveryDate)}</strong>
             </p>
           </div>
 
           {/* Status Changer */}
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-semibold text-slate-500">Status:</span>
+          <div className="flex items-center gap-2 bg-slate-50 p-1.5 rounded-xl border border-slate-200/80 self-start sm:self-auto">
+            <span className="text-xs font-semibold text-slate-600 pl-2">Ubah Status:</span>
             <select
               value={cycle.status}
               onChange={(e) => handleUpdateStatus(e.target.value)}
-              className="text-xs font-bold bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-slate-800 focus:outline-hidden focus:border-emerald-600"
+              className="text-xs font-bold bg-white border border-slate-200 rounded-lg px-2.5 py-1 text-slate-800 focus:outline-hidden focus:border-emerald-600 cursor-pointer shadow-2xs"
             >
-              <option value="draft">Draft</option>
-              <option value="open">Open (Buka)</option>
-              <option value="closed">Closed (Ditutup)</option>
-              <option value="delivered">Delivered (Terkirim)</option>
-              <option value="completed">Completed (Selesai)</option>
+              <option value="draft">Draf (Persiapan)</option>
+              <option value="open">Buka (Open)</option>
+              <option value="closed">Ditutup (Closed)</option>
+              <option value="delivered">Terkirim (Delivered)</option>
+              <option value="completed">Selesai (Completed)</option>
             </select>
           </div>
         </div>
       </div>
 
-      {/* Tabs Navigation */}
-      <div className="flex items-center gap-2 border-b border-slate-200 overflow-x-auto">
+      {/* Tactile Segmented Tabs Navigation */}
+      <div className="inline-flex bg-slate-100/90 p-1 rounded-2xl border border-slate-200/80 gap-1 overflow-x-auto w-full sm:w-auto">
         <button
           onClick={() => setActiveTab('recap')}
-          className={`flex items-center gap-2 px-4 py-3 text-sm font-semibold border-b-2 transition-all shrink-0 ${
+          className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer ${
             activeTab === 'recap'
-              ? 'border-emerald-600 text-emerald-700 bg-emerald-50/50'
-              : 'border-transparent text-slate-500 hover:text-slate-900'
+              ? 'bg-white text-emerald-900 shadow-xs border border-slate-200/60'
+              : 'text-slate-600 hover:text-slate-900'
           }`}
         >
-          <Copy className="w-4 h-4" />
+          <Copy className="w-3.5 h-3.5" />
           Rekap & Ekspor WA
         </button>
         <button
           onClick={() => setActiveTab('orders')}
-          className={`flex items-center gap-2 px-4 py-3 text-sm font-semibold border-b-2 transition-all shrink-0 ${
+          className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer ${
             activeTab === 'orders'
-              ? 'border-emerald-600 text-emerald-700 bg-emerald-50/50'
-              : 'border-transparent text-slate-500 hover:text-slate-900'
+              ? 'bg-white text-emerald-900 shadow-xs border border-slate-200/60'
+              : 'text-slate-600 hover:text-slate-900'
           }`}
         >
-          <ShoppingCart className="w-4 h-4" />
+          <ShoppingCart className="w-3.5 h-3.5" />
           Daftar Pesanan ({orders.length})
         </button>
         <button
           onClick={() => setActiveTab('rotation')}
-          className={`flex items-center gap-2 px-4 py-3 text-sm font-semibold border-b-2 transition-all shrink-0 ${
+          className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer ${
             activeTab === 'rotation'
-              ? 'border-emerald-600 text-emerald-700 bg-emerald-50/50'
-              : 'border-transparent text-slate-500 hover:text-slate-900'
+              ? 'bg-white text-emerald-900 shadow-xs border border-slate-200/60'
+              : 'text-slate-600 hover:text-slate-900'
           }`}
         >
-          <Repeat className="w-4 h-4" />
+          <Repeat className="w-3.5 h-3.5" />
           Jadwal Rotasi ({rotation.length})
         </button>
         <button
           onClick={() => setActiveTab('prices')}
-          className={`flex items-center gap-2 px-4 py-3 text-sm font-semibold border-b-2 transition-all shrink-0 cursor-pointer ${
+          className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer ${
             activeTab === 'prices'
-              ? 'border-emerald-600 text-emerald-700 bg-emerald-50/50'
-              : 'border-transparent text-slate-500 hover:text-slate-900'
+              ? 'bg-white text-emerald-900 shadow-xs border border-slate-200/60'
+              : 'text-slate-600 hover:text-slate-900'
           }`}
         >
-          <DollarSign className="w-4 h-4" />
+          <DollarSign className="w-3.5 h-3.5" />
           Harga Mingguan ({prices.length})
         </button>
         <button
           onClick={() => setActiveTab('inventory')}
-          className={`flex items-center gap-2 px-4 py-3 text-sm font-semibold border-b-2 transition-all shrink-0 cursor-pointer ${
+          className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer ${
             activeTab === 'inventory'
-              ? 'border-emerald-600 text-emerald-700 bg-emerald-50/50'
-              : 'border-transparent text-slate-500 hover:text-slate-900'
+              ? 'bg-white text-emerald-900 shadow-xs border border-slate-200/60'
+              : 'text-slate-600 hover:text-slate-900'
           }`}
         >
-          <ClipboardCheck className="w-4 h-4" />
+          <ClipboardCheck className="w-3.5 h-3.5" />
           Penerimaan Barang
         </button>
       </div>
@@ -618,19 +632,19 @@ export default function CycleDetailPage({ params }: { params: Promise<{ id: stri
                   <tr key={item.product.id} className="hover:bg-slate-50/70">
                     <td className="py-3.5 px-4">
                       <span className="font-bold text-slate-900 block">{item.product.name}</span>
-                      <span className="text-slate-400 text-xs">Satuan: {item.product.unit}</span>
+                      <span className="text-slate-500 text-xs">Satuan: {item.product.unit}</span>
                     </td>
                     <td className="py-3.5 px-4 text-xs font-semibold text-slate-700">
                       {item.product.isTarget
-                        ? `${item.product.targetQuantity} ${item.product.unit}`
+                        ? <span className="tabular-nums">{item.product.targetQuantity} {item.product.unit}</span>
                         : '-'}
                     </td>
                     <td className="py-3.5 px-4">
-                      <div className="font-extrabold text-slate-900 text-base">
+                      <div className="font-extrabold text-slate-900 text-base tabular-nums">
                         {item.totalQuantity} <span className="text-xs font-normal text-slate-500">{item.product.unit}</span>
                       </div>
                       {(item.consumerQuantity > 0 || item.traderQuantity > 0) && (
-                        <div className="flex items-center gap-1.5 text-[11px] mt-1">
+                        <div className="flex items-center gap-1.5 text-[11px] mt-1 tabular-nums">
                           <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 px-1.5 py-0.5 rounded font-medium">
                             Konsumen: {item.consumerQuantity}
                           </span>
@@ -643,21 +657,21 @@ export default function CycleDetailPage({ params }: { params: Promise<{ id: stri
                     <td className="py-3.5 px-4">
                       {item.product.isTarget ? (
                         item.isMet ? (
-                          <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
+                          <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full tabular-nums">
                             <CheckCircle2 className="w-3 h-3" />
                             Tercapai ({item.percentage}%)
                           </span>
                         ) : (
-                          <span className="inline-flex items-center gap-1 text-xs font-semibold text-rose-700 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded-full">
+                          <span className="inline-flex items-center gap-1 text-xs font-semibold text-rose-700 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded-full tabular-nums">
                             <AlertCircle className="w-3 h-3" />
                             Kurang {Number(item.product.targetQuantity) - item.totalQuantity} {item.product.unit}
                           </span>
                         )
                       ) : (
-                        <span className="text-xs text-slate-400">Non-target</span>
+                        <span className="text-xs text-slate-500">Non-target</span>
                       )}
                     </td>
-                    <td className="py-3.5 px-4 text-right font-bold text-slate-900">
+                    <td className="py-3.5 px-4 text-right font-bold text-slate-900 tabular-nums">
                       {formatCurrency(item.totalValue)}
                     </td>
                   </tr>
@@ -741,9 +755,9 @@ export default function CycleDetailPage({ params }: { params: Promise<{ id: stri
                       <td className="py-3 px-4 text-xs text-slate-700">
                         {o.items.map((it: any) => (
                           <div key={it.id} className="flex items-center gap-1.5 py-0.5">
-                            <span>{it.product.name} ({it.quantity} {it.product.unit})</span>
+                            <span className="tabular-nums">{it.product.name} ({it.quantity} {it.product.unit})</span>
                             <span
-                              className={`text-[10px] px-1.5 py-0.2 rounded font-semibold ${
+                              className={`text-[10px] px-1.5 py-0.5 rounded font-semibold ${
                                 it.priceType === 'trader'
                                   ? 'bg-blue-100 text-blue-800'
                                   : 'bg-emerald-100 text-emerald-800'
@@ -754,7 +768,7 @@ export default function CycleDetailPage({ params }: { params: Promise<{ id: stri
                           </div>
                         ))}
                       </td>
-                      <td className="py-3 px-4 font-bold text-slate-900">
+                      <td className="py-3 px-4 font-bold text-slate-900 tabular-nums">
                         {formatCurrency(o.totalAmount)}
                       </td>
                       <td className="py-3 px-4">
@@ -763,13 +777,23 @@ export default function CycleDetailPage({ params }: { params: Promise<{ id: stri
                             e.stopPropagation()
                             handleTogglePayment(o.id, o.paymentStatus)
                           }}
-                          className={`px-2.5 py-1 rounded-full text-xs font-semibold transition-all ${
+                          className={`px-2.5 py-1 rounded-full text-xs font-semibold inline-flex items-center gap-1 transition-all ${
                             o.paymentStatus === 'paid'
                               ? 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200'
                               : 'bg-rose-100 text-rose-800 hover:bg-rose-200'
                           }`}
                         >
-                          {o.paymentStatus === 'paid' ? '✅ Lunas' : '❌ Belum Bayar'}
+                          {o.paymentStatus === 'paid' ? (
+                            <>
+                              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-700" />
+                              Lunas
+                            </>
+                          ) : (
+                            <>
+                              <AlertCircle className="w-3.5 h-3.5 text-rose-700" />
+                              Belum Bayar
+                            </>
+                          )}
                         </button>
                       </td>
                       <td className="py-3 px-4">
@@ -869,10 +893,10 @@ export default function CycleDetailPage({ params }: { params: Promise<{ id: stri
                           }`}
                         >
                           {r.member.role === 'pengurus'
-                            ? '🛡️ Pengurus (L3)'
+                            ? 'Pengurus (L3)'
                             : r.member.role === 'pj'
-                            ? '⭐ PJ (L2)'
-                            : '👤 Anggota (L1)'}
+                            ? 'PJ (L2)'
+                            : 'Anggota (L1)'}
                         </span>
                       </td>
                       <td className="py-3 px-4 text-xs text-slate-600">{r.member.group?.name}</td>
@@ -906,7 +930,7 @@ export default function CycleDetailPage({ params }: { params: Promise<{ id: stri
                           )}
                           <button
                             onClick={() => handleDeleteRotation(r.id, r.member.name)}
-                            className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-md transition-colors"
+                            className="p-1.5 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded-md transition-colors"
                             title="Hapus dari jadwal rotasi"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
@@ -1139,10 +1163,10 @@ export default function CycleDetailPage({ params }: { params: Promise<{ id: stri
             {/* Total Modal / HPP */}
             <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
               <span className="text-xs font-semibold text-slate-500 block">Total Modal (HPP)</span>
-              <span className="text-lg sm:text-xl font-black text-slate-900 mt-1 block">
+              <span className="text-lg sm:text-xl font-black text-slate-900 mt-1 block tabular-nums">
                 {formatCurrency(totalInvPurchaseCost)}
               </span>
-              <span className="text-[11px] text-slate-400 mt-1 block">
+              <span className="text-[11px] text-slate-500 mt-1 block">
                 Pembelian dari Supplier L4
               </span>
             </div>
@@ -1150,7 +1174,7 @@ export default function CycleDetailPage({ params }: { params: Promise<{ id: stri
             {/* Total Omzet Penjualan */}
             <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
               <span className="text-xs font-semibold text-slate-500 block">Total Omzet Penjualan</span>
-              <span className="text-lg sm:text-xl font-black text-emerald-700 mt-1 block">
+              <span className="text-lg sm:text-xl font-black text-emerald-700 mt-1 block tabular-nums">
                 {formatCurrency(totalInvRevenue)}
               </span>
               <span className="text-[11px] text-emerald-600 mt-1 block">
@@ -1282,18 +1306,18 @@ export default function CycleDetailPage({ params }: { params: Promise<{ id: stri
                             <div className="flex items-center gap-1.5">
                               <span className="font-bold text-slate-900">{item.productName}</span>
                               {item.isTarget && (
-                                <span className="text-[9px] bg-amber-100 text-amber-800 font-bold px-1 rounded">
+                                <span className="text-[10px] bg-amber-100 text-amber-800 font-bold px-1.5 py-0.5 rounded">
                                   TARGET
                                 </span>
                               )}
                             </div>
-                            <span className="text-[11px] text-slate-400 block">
+                            <span className="text-[11px] text-slate-500 block">
                               Satuan: {item.unit} {item.category ? `• ${item.category}` : ''}
                             </span>
                           </td>
 
                           {/* Dipesan */}
-                          <td className="py-3 px-3 text-center font-bold text-slate-700">
+                          <td className="py-3 px-3 text-center font-bold text-slate-700 tabular-nums">
                             {item.orderedQty} {item.unit}
                           </td>
 
@@ -1308,9 +1332,9 @@ export default function CycleDetailPage({ params }: { params: Promise<{ id: stri
                                 onChange={(e) =>
                                   handleInventoryItemChange(idx, 'receivedQty', parseFloat(e.target.value) || 0)
                                 }
-                                className="w-20 text-center font-bold text-xs border border-slate-200 rounded-lg py-1 px-1.5 focus:outline-hidden focus:border-emerald-600 bg-white"
+                                className="w-20 text-center font-bold text-xs tabular-nums border border-slate-200 rounded-lg py-1 px-1.5 focus:outline-hidden focus:border-emerald-600 bg-white"
                               />
-                              <span className="text-[11px] text-slate-400">{item.unit}</span>
+                              <span className="text-[11px] text-slate-500">{item.unit}</span>
                             </div>
                           </td>
 
@@ -1325,20 +1349,20 @@ export default function CycleDetailPage({ params }: { params: Promise<{ id: stri
                                 onChange={(e) =>
                                   handleInventoryItemChange(idx, 'damagedQty', parseFloat(e.target.value) || 0)
                                 }
-                                className={`w-16 text-center font-bold text-xs border rounded-lg py-1 px-1.5 focus:outline-hidden focus:border-emerald-600 bg-white ${
+                                className={`w-16 text-center font-bold text-xs tabular-nums border rounded-lg py-1 px-1.5 focus:outline-hidden focus:border-emerald-600 bg-white ${
                                   item.damagedQty > 0
                                     ? 'border-rose-300 text-rose-700 bg-rose-50/50'
                                     : 'border-slate-200 text-slate-700'
                                 }`}
                               />
-                              <span className="text-[11px] text-slate-400">{item.unit}</span>
+                              <span className="text-[11px] text-slate-500">{item.unit}</span>
                             </div>
                           </td>
 
                           {/* Selisih */}
                           <td className="py-3 px-3 text-center">
                             <span
-                              className={`text-xs font-bold px-2 py-0.5 rounded-full inline-block ${
+                              className={`text-xs font-bold px-2.5 py-0.5 rounded-full inline-flex items-center gap-1 tabular-nums ${
                                 diff === 0
                                   ? 'bg-emerald-50 text-emerald-700'
                                   : diff > 0
@@ -1346,7 +1370,14 @@ export default function CycleDetailPage({ params }: { params: Promise<{ id: stri
                                   : 'bg-rose-50 text-rose-700'
                               }`}
                             >
-                              {diff === 0 ? '✅ Pas' : `${diff > 0 ? '+' : ''}${diff} ${item.unit}`}
+                              {diff === 0 ? (
+                                <>
+                                  <Check className="w-3 h-3 text-emerald-600" />
+                                  Pas
+                                </>
+                              ) : (
+                                `${diff > 0 ? '+' : ''}${diff} ${item.unit}`
+                              )}
                             </span>
                           </td>
 

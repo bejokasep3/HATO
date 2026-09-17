@@ -24,6 +24,7 @@
 # misc
 .DS_Store
 *.pem
+*.exe
 
 # debug
 npm-debug.log*
@@ -53,3 +54,8 @@ mobile/web-build/
 *.key
 *.mobileprovision
 *.orig.*
+
+# Impeccable working files
+.impeccable/*
+!.impeccable/config.json
+!.impeccable/design-system.json

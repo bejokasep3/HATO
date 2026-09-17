@@ -51,49 +51,58 @@ export default function RankingPage() {
 
   const getRankBadge = (rank: number, score: number) => {
     if (score === 0) {
-      return <span className="text-slate-300 font-medium text-xs">-</span>
+      return <span className="text-slate-400 font-medium text-xs">-</span>
     }
     switch (rank) {
       case 1:
         return (
-          <span className="w-7 h-7 rounded-full bg-amber-400 text-white font-bold flex items-center justify-center text-xs shadow-xs">
-            🥇 1
+          <span className="inline-flex items-center gap-1 text-xs font-black text-amber-900 bg-amber-200/90 border border-amber-300 px-2.5 py-0.5 rounded-full shadow-2xs tabular-nums">
+            <Trophy className="w-3 h-3 text-amber-700" />
+            Juara 1
           </span>
         )
       case 2:
         return (
-          <span className="w-7 h-7 rounded-full bg-slate-300 text-slate-800 font-bold flex items-center justify-center text-xs shadow-xs">
-            🥈 2
+          <span className="inline-flex items-center gap-1 text-xs font-black text-slate-800 bg-slate-200 border border-slate-300 px-2.5 py-0.5 rounded-full shadow-2xs tabular-nums">
+            Juara 2
           </span>
         )
       case 3:
         return (
-          <span className="w-7 h-7 rounded-full bg-amber-600 text-white font-bold flex items-center justify-center text-xs shadow-xs">
-            🥉 3
+          <span className="inline-flex items-center gap-1 text-xs font-black text-amber-950 bg-amber-100 border border-amber-300 px-2.5 py-0.5 rounded-full shadow-2xs tabular-nums">
+            Juara 3
           </span>
         )
       default:
-        return <span className="text-slate-500 font-bold text-xs px-1">#{rank}</span>
+        return <span className="text-slate-600 font-bold text-xs px-2 tabular-nums">#{rank}</span>
     }
   }
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Peringkat & Keaktifan</h1>
-        <p className="text-sm text-slate-500 mt-1">
-          Apresiasi keaktifan anggota dan tingkat partisipasi sub-grup dalam pemesanan sembako.
-        </p>
+    <div className="space-y-6 max-w-7xl mx-auto">
+      {/* Header Command Bar */}
+      <div className="bg-white border border-slate-200/90 rounded-2xl p-5 sm:p-6 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <div className="flex items-center gap-2.5 flex-wrap mb-1">
+            <h1 className="text-2xl font-extrabold text-slate-900 tracking-tight">Peringkat & Keaktifan Komunitas</h1>
+            <span className="text-xs font-semibold text-emerald-800 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200/60 tabular-nums">
+              {displayedMembers.length} Anggota Dinilai
+            </span>
+          </div>
+          <p className="text-xs text-slate-500 max-w-2xl">
+            Apresiasi keaktifan rotasi anggota, ketepatan waktu pembayaran, dan partisipasi sub-grup dalam siklus mingguan.
+          </p>
+        </div>
       </div>
 
       {/* Scoring Explainer Card */}
-      <div className="bg-emerald-50/80 border border-emerald-200/90 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-emerald-950 shadow-2xs">
+      <div className="bg-slate-50/90 border border-slate-200/90 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-slate-800 shadow-2xs">
         <div className="flex items-start sm:items-center gap-2.5">
-          <Sparkles className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5 sm:mt-0" />
+          <Sparkles className="w-4 h-4 text-amber-500 shrink-0 mt-0.5 sm:mt-0" />
           <div>
-            <span className="font-bold block">Skor Poin Praktis & Kompak:</span>
-            <span className="text-emerald-800">
-              Setiap Pesanan (+10 pts) + Tiap Belanja Rp 10.000 (+1 pt) + Bonus Lunas Tepat Waktu (hingga +10 pts).
+            <span className="font-bold text-slate-900 block">Sistem Penilaian Kompak:</span>
+            <span className="text-slate-600">
+              Tiap Pesanan (+10 pts) • Tiap Belanja Rp 10.000 (+1 pt) • Bonus Lunas Tepat Waktu (+10 pts).
             </span>
           </div>
         </div>
@@ -129,12 +138,12 @@ export default function RankingPage() {
                   <div className="flex items-center gap-1.5 flex-wrap">
                     <h3 className="font-bold text-slate-900 text-lg">{m.name}</h3>
                     {m.role === 'pengurus' && (
-                      <span className="text-[10px] bg-purple-100 text-purple-700 px-1.5 py-0.2 rounded font-semibold">
+                      <span className="text-[10px] bg-purple-100 text-purple-800 px-1.5 py-0.5 rounded font-semibold">
                         Pengurus
                       </span>
                     )}
                     {m.role === 'pj' && (
-                      <span className="text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.2 rounded font-semibold">
+                      <span className="text-[10px] bg-blue-100 text-blue-800 px-1.5 py-0.5 rounded font-semibold">
                         PJ
                       </span>
                     )}
@@ -340,4 +349,3 @@ export default function RankingPage() {
     </div>
   )
 }
-

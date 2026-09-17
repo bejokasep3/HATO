@@ -4,7 +4,7 @@ import React, { useEffect, useState } from 'react'
 import Link from 'next/link'
 import {
   Package,
-  PlusCircle,
+  Plus,
   Edit2,
   Trash2,
   Search,
@@ -17,6 +17,8 @@ import {
 } from 'lucide-react'
 import { formatCurrency } from '@/lib/utils'
 import { toast } from 'sonner'
+import { Button } from '@/components/ui/Button'
+import { Badge } from '@/components/ui/Badge'
 
 interface ProductItem {
   id: string
@@ -217,43 +219,48 @@ export default function ProductsPage() {
     : null
 
   return (
-    <div className="space-y-6">
-      {/* Top Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+    <div className="space-y-6 max-w-7xl mx-auto">
+      {/* Top Header Command Bar */}
+      <div className="bg-white border border-slate-200/90 rounded-2xl p-5 sm:p-6 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Katalog & Harga Produk</h1>
-          <p className="text-sm text-slate-500 mt-1">
-            Kelola data komoditas sembako, penetapan Harga Konsumen & Pedagang, dan target kuantitas mingguan.
+          <div className="flex items-center gap-2.5 flex-wrap mb-1">
+            <h1 className="text-2xl font-extrabold text-slate-900 tracking-tight">Katalog & Harga Produk</h1>
+            <Badge variant="emerald" size="sm" className="tabular-nums font-bold">
+              {products.length} Komoditas
+            </Badge>
+          </div>
+          <p className="text-xs text-slate-500 max-w-2xl">
+            Kelola data komoditas sembako, penetapan Harga Konsumen & Pedagang per siklus, dan target kuota mingguan.
           </p>
         </div>
-        <button
+        <Button
+          variant="primary"
           onClick={handleOpenCreateModal}
-          className="inline-flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-medium px-4 py-2.5 rounded-lg text-sm transition-all shadow-xs shrink-0"
+          icon={<Plus className="w-4 h-4" />}
         >
-          <PlusCircle className="w-4 h-4" />
           Tambah Produk Baru
-        </button>
+        </Button>
       </div>
 
       {/* Active Cycle Quick Price Banner */}
       {activeCycle && (
-        <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs">
+        <div className="bg-slate-50/90 border border-slate-200/90 rounded-2xl p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-lg bg-emerald-600 text-white flex items-center justify-center shrink-0">
+            <div className="w-9 h-9 rounded-xl bg-emerald-100 text-emerald-800 flex items-center justify-center shrink-0 border border-emerald-200/60">
               <DollarSign className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="font-bold text-emerald-950 text-sm">
+              <h3 className="font-extrabold text-slate-900 text-sm tracking-tight">
                 Harga Siklus Aktif: {activeCycle.label}
               </h3>
-              <p className="text-xs text-emerald-800">
-                Klik pada produk untuk mengedit Harga Konsumen & Pedagang, atau buka form batch untuk mengatur seluruh harga siklus.
+              <p className="text-xs text-slate-500 mt-0.5">
+                Klik produk untuk mengubah Harga Konsumen & Pedagang, atau buka form batch untuk konfigurasi harga massal.
               </p>
             </div>
           </div>
           <Link
             href={`/cycles/${activeCycle.id}`}
-            className="inline-flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold px-3.5 py-2 rounded-lg text-xs transition-colors shrink-0 shadow-xs"
+            className="inline-flex items-center gap-1.5 bg-white hover:bg-slate-100 text-emerald-800 border border-slate-200/80 font-semibold px-3.5 py-2 rounded-xl text-xs transition-colors shrink-0 shadow-2xs self-start sm:self-auto"
           >
             Buka Form Batch Harga
             <ArrowRight className="w-3.5 h-3.5" />
@@ -262,7 +269,7 @@ export default function ProductsPage() {
       )}
 
       {/* Search & Filter Bar */}
-      <div className="flex flex-col sm:flex-row gap-3 bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
+      <div className="flex flex-col sm:flex-row gap-3 bg-white p-3.5 rounded-2xl border border-slate-200/90 shadow-2xs">
         <div className="relative flex-1">
           <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
           <input
@@ -270,14 +277,14 @@ export default function ProductsPage() {
             placeholder="Cari nama komoditas..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full text-xs border border-slate-200 rounded-lg pl-9 pr-3 py-2 focus:outline-hidden focus:border-emerald-600"
+            className="w-full text-xs border border-slate-200 rounded-xl pl-9 pr-3 py-2 focus:outline-hidden focus:border-emerald-600"
           />
         </div>
 
         <select
           value={categoryFilter}
           onChange={(e) => setCategoryFilter(e.target.value)}
-          className="text-xs border border-slate-200 rounded-lg px-3 py-2 bg-white focus:outline-hidden focus:border-emerald-600"
+          className="text-xs border border-slate-200 rounded-xl px-3 py-2 bg-white focus:outline-hidden focus:border-emerald-600 cursor-pointer"
         >
           <option value="">Semua Kategori</option>
           {categories.map((c) => (
@@ -289,7 +296,7 @@ export default function ProductsPage() {
       </div>
 
       {/* Products Table */}
-      <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-xs">
+      <div className="bg-white rounded-2xl border border-slate-200/90 overflow-hidden shadow-xs">
         {loading ? (
           <div className="flex items-center justify-center min-h-[30vh]">
             <div className="w-8 h-8 border-3 border-emerald-600 border-t-transparent rounded-full animate-spin" />
@@ -333,27 +340,27 @@ export default function ProductsPage() {
                     </td>
                     <td className="py-3.5 px-4 text-xs text-slate-600">{p.category || '-'}</td>
                     <td className="py-3.5 px-4 text-xs text-slate-700 font-semibold">{p.unit}</td>
-                    <td className="py-3.5 px-4 font-bold text-slate-900 text-xs">
+                    <td className="py-3.5 px-4 font-bold text-slate-900 text-xs tabular-nums">
                       {p.consumerPrice !== null ? formatCurrency(p.consumerPrice) : (
-                        <span className="text-xs font-normal text-slate-400 italic">-</span>
+                        <span className="text-xs font-normal text-slate-500 italic">-</span>
                       )}
                     </td>
-                    <td className="py-3.5 px-4 font-extrabold text-emerald-800 text-xs">
+                    <td className="py-3.5 px-4 font-extrabold text-emerald-800 text-xs tabular-nums">
                       {p.traderPrice !== null ? (
                         <span className="bg-emerald-50 text-emerald-800 px-2 py-0.5 rounded border border-emerald-200">
                           {formatCurrency(p.traderPrice)}
                         </span>
                       ) : (
-                        <span className="text-xs font-normal text-slate-400 italic">-</span>
+                        <span className="text-xs font-normal text-slate-500 italic">-</span>
                       )}
                     </td>
                     <td className="py-3.5 px-4">
                       {p.isTarget ? (
-                        <span className="text-xs font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-md inline-block">
+                        <span className="text-xs font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-md inline-block tabular-nums">
                           Min. {p.targetQuantity} {p.unit} / minggu
                         </span>
                       ) : (
-                        <span className="text-xs text-slate-400">-</span>
+                        <span className="text-xs text-slate-500">-</span>
                       )}
                     </td>
                     <td className="py-3.5 px-4 text-center">

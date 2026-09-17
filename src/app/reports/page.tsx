@@ -255,29 +255,27 @@ export default function ReportsPage() {
   }
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs">
+    <div className="space-y-6 max-w-7xl mx-auto">
+      {/* Header Command Bar */}
+      <div className="bg-white border border-slate-200/90 rounded-2xl p-5 sm:p-6 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <div className="flex items-center gap-2.5">
-            <div className="w-10 h-10 rounded-xl bg-blue-600/10 text-blue-700 flex items-center justify-center">
-              <BarChart3 className="w-5 h-5" />
-            </div>
-            <div>
-              <h1 className="text-xl font-extrabold text-slate-900 tracking-tight">
-                Laporan & Analitik Distribusi
-              </h1>
-              <p className="text-xs text-slate-500 mt-0.5">
-                Evaluasi target ayam & tahu mingguan, stok belum terjual, margin keuntungan, dan status piutang multi-siklus.
-              </p>
-            </div>
+          <div className="flex items-center gap-2.5 flex-wrap mb-1">
+            <h1 className="text-2xl font-extrabold text-slate-900 tracking-tight">
+              Laporan & Analitik Distribusi
+            </h1>
+            <span className="text-xs font-semibold text-emerald-800 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200/60">
+              L3 Operational Analytics
+            </span>
           </div>
+          <p className="text-xs text-slate-500 max-w-2xl">
+            Evaluasi pencapaian kuota supplier Level 4, stok mengendap carryover, margin keuntungan bersih, dan status piutang anggota.
+          </p>
         </div>
 
         <div className="flex items-center gap-2">
           <button
             onClick={() => fetchReport(activeTab)}
-            className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-xl border border-slate-200 transition-colors cursor-pointer"
+            className="p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-xl border border-slate-200 transition-colors cursor-pointer"
             title="Muat Ulang"
           >
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
@@ -285,7 +283,7 @@ export default function ReportsPage() {
 
           <button
             onClick={handleCopySummary}
-            className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl transition-colors cursor-pointer"
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200/80 rounded-xl transition-colors cursor-pointer shadow-2xs"
           >
             <Copy className="w-3.5 h-3.5" />
             Salin WA
@@ -293,7 +291,7 @@ export default function ReportsPage() {
 
           <button
             onClick={handleExportCSV}
-            className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl transition-colors cursor-pointer"
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200/80 rounded-xl transition-colors cursor-pointer shadow-2xs"
           >
             <Download className="w-3.5 h-3.5" />
             Ekspor CSV
@@ -301,14 +299,14 @@ export default function ReportsPage() {
         </div>
       </div>
 
-      {/* Tabs Bar — Modern Segmented Control */}
-      <div className="flex p-1.5 bg-slate-200/60 rounded-xl border border-slate-200 gap-1 overflow-x-auto">
+      {/* Tactile Segmented Control Tabs */}
+      <div className="inline-flex bg-slate-100/90 p-1 rounded-2xl border border-slate-200/80 gap-1 overflow-x-auto w-full sm:w-auto">
         <button
           onClick={() => setActiveTab('targets')}
-          className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs sm:text-sm font-bold transition-all shrink-0 cursor-pointer ${
+          className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer ${
             activeTab === 'targets'
-              ? 'bg-white text-emerald-800 shadow-xs border border-slate-200/60'
-              : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
+              ? 'bg-white text-emerald-900 shadow-xs border border-slate-200/60'
+              : 'text-slate-600 hover:text-slate-900'
           }`}
         >
           <Target className={`w-4 h-4 ${activeTab === 'targets' ? 'text-emerald-600' : 'text-slate-400'}`} />
@@ -317,10 +315,10 @@ export default function ReportsPage() {
 
         <button
           onClick={() => setActiveTab('financial')}
-          className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs sm:text-sm font-bold transition-all shrink-0 cursor-pointer ${
+          className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer ${
             activeTab === 'financial'
-              ? 'bg-white text-emerald-800 shadow-xs border border-slate-200/60'
-              : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
+              ? 'bg-white text-emerald-900 shadow-xs border border-slate-200/60'
+              : 'text-slate-600 hover:text-slate-900'
           }`}
         >
           <DollarSign className={`w-4 h-4 ${activeTab === 'financial' ? 'text-emerald-600' : 'text-slate-400'}`} />
@@ -329,10 +327,10 @@ export default function ReportsPage() {
 
         <button
           onClick={() => setActiveTab('commodity')}
-          className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs sm:text-sm font-bold transition-all shrink-0 cursor-pointer ${
+          className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer ${
             activeTab === 'commodity'
-              ? 'bg-white text-emerald-800 shadow-xs border border-slate-200/60'
-              : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
+              ? 'bg-white text-emerald-900 shadow-xs border border-slate-200/60'
+              : 'text-slate-600 hover:text-slate-900'
           }`}
         >
           <Package className={`w-4 h-4 ${activeTab === 'commodity' ? 'text-emerald-600' : 'text-slate-400'}`} />
@@ -341,10 +339,10 @@ export default function ReportsPage() {
 
         <button
           onClick={() => setActiveTab('member')}
-          className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs sm:text-sm font-bold transition-all shrink-0 cursor-pointer ${
+          className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer ${
             activeTab === 'member'
-              ? 'bg-white text-emerald-800 shadow-xs border border-slate-200/60'
-              : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
+              ? 'bg-white text-emerald-900 shadow-xs border border-slate-200/60'
+              : 'text-slate-600 hover:text-slate-900'
           }`}
         >
           <Users className={`w-4 h-4 ${activeTab === 'member' ? 'text-emerald-600' : 'text-slate-400'}`} />
@@ -353,10 +351,10 @@ export default function ReportsPage() {
 
         <button
           onClick={() => setActiveTab('receivable')}
-          className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs sm:text-sm font-bold transition-all shrink-0 cursor-pointer ${
+          className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer ${
             activeTab === 'receivable'
-              ? 'bg-white text-emerald-800 shadow-xs border border-slate-200/60'
-              : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
+              ? 'bg-white text-emerald-900 shadow-xs border border-slate-200/60'
+              : 'text-slate-600 hover:text-slate-900'
           }`}
         >
           <AlertCircle className={`w-4 h-4 ${activeTab === 'receivable' ? 'text-emerald-600' : 'text-slate-400'}`} />

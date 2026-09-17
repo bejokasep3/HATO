@@ -1,9 +1,8 @@
-'use client'
+﻿'use client'
 
 import React, { useEffect, useState } from 'react'
 import Link from 'next/link'
 import {
-  Sparkles,
   Calendar,
   Clock,
   CheckCircle2,
@@ -14,13 +13,15 @@ import {
   ShoppingCart,
   ArrowRight,
   MessageSquare,
-  PlusCircle,
+  Plus,
   Package,
   ChevronLeft,
   ChevronRight,
   ChevronDown,
 } from 'lucide-react'
 import { formatCurrency, formatDate, getWhatsAppUrl } from '@/lib/utils'
+import { Button } from '@/components/ui/Button'
+import { Badge } from '@/components/ui/Badge'
 
 interface DashboardData {
   hasCycle: boolean
@@ -134,7 +135,7 @@ export default function DashboardPage() {
       <div className="flex items-center justify-center min-h-[50vh]">
         <div className="flex flex-col items-center gap-3">
           <div className="w-8 h-8 border-3 border-emerald-600 border-t-transparent rounded-full animate-spin" />
-          <p className="text-sm text-slate-500 font-medium">Memuat dashboard...</p>
+          <p className="text-sm text-slate-500 font-medium">Memuat dashboard operasional...</p>
         </div>
       </div>
     )
@@ -142,20 +143,18 @@ export default function DashboardPage() {
 
   if (!data?.hasCycle || !data.currentCycle) {
     return (
-      <div className="bg-white rounded-xl border border-slate-200 p-8 text-center max-w-xl mx-auto my-12">
-        <div className="w-12 h-12 bg-amber-50 text-amber-600 rounded-full flex items-center justify-center mx-auto mb-4">
+      <div className="bg-white rounded-2xl border border-slate-200/90 p-8 text-center max-w-xl mx-auto my-12 shadow-xs">
+        <div className="w-12 h-12 bg-amber-50 text-amber-700 rounded-xl flex items-center justify-center mx-auto mb-4 border border-amber-200/60">
           <Calendar className="w-6 h-6" />
         </div>
-        <h2 className="text-xl font-bold text-slate-900 mb-2">Belum Ada Siklus Aktif</h2>
+        <h2 className="text-xl font-extrabold text-slate-900 mb-2 tracking-tight">Belum Ada Siklus Aktif</h2>
         <p className="text-slate-600 mb-6 text-sm">
           Mulai dengan membuat siklus pemesanan baru untuk menjadwalkan rotasi anggota dan menentukan harga mingguan.
         </p>
-        <Link
-          href="/cycles"
-          className="inline-flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-medium px-4 py-2.5 rounded-lg text-sm transition-all"
-        >
-          <PlusCircle className="w-4 h-4" />
-          Buat Siklus Baru
+        <Link href="/cycles">
+          <Button variant="primary" icon={<Plus className="w-4 h-4" />}>
+            Buat Siklus Baru
+          </Button>
         </Link>
       </div>
     )
@@ -173,7 +172,6 @@ export default function DashboardPage() {
   const targets = data.targets || []
   const rotation = data.rotation
   const payments = data.payments
-  const recentOrders = data.recentOrders || []
 
   const scheduledMembers = rotation?.members || []
   const pendingCount = scheduledMembers.filter((m) => !m.isOrdered).length
@@ -186,350 +184,350 @@ export default function DashboardPage() {
   })
 
   return (
-    <div className="space-y-6">
-      {/* Top Bar: Clean Cycle Switcher Toolbar */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white px-4 py-2.5 rounded-xl border border-slate-200 shadow-2xs">
-        <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
-          {/* Stepper Navigation */}
-          <div className="inline-flex items-center bg-slate-100 rounded-lg p-0.5 border border-slate-200/80">
-            <button
-              onClick={() => prevCycle && fetchDashboard(prevCycle.id)}
-              disabled={!prevCycle || switchingCycle}
-              title={prevCycle ? `Lihat ${prevCycle.label}` : 'Tidak ada siklus sebelumnya'}
-              className="p-1.5 rounded-md hover:bg-white hover:text-slate-900 disabled:opacity-25 disabled:hover:bg-transparent text-slate-600 transition-all cursor-pointer"
-            >
-              <ChevronLeft className="w-4 h-4" />
-            </button>
-
-            <div className="relative px-2">
-              <select
-                value={cycle.id}
-                onChange={(e) => fetchDashboard(e.target.value)}
-                disabled={switchingCycle}
-                className="bg-transparent appearance-none font-bold text-slate-800 text-xs sm:text-sm pr-5 py-1 focus:outline-none cursor-pointer"
+    <div className="space-y-6 max-w-7xl mx-auto">
+      {/* 1. MASTER COMMAND STRIP (Tactile Stepper & Operational Timeline) */}
+      <div className="bg-white border border-slate-200/90 rounded-2xl shadow-xs overflow-hidden">
+        <div className="p-4 sm:p-5 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+          {/* Cycle Picker & Identity */}
+          <div className="flex items-center gap-3 flex-wrap">
+            <div className="inline-flex items-center bg-slate-100/90 rounded-xl p-1 border border-slate-200/80">
+              <button
+                onClick={() => prevCycle && fetchDashboard(prevCycle.id)}
+                disabled={!prevCycle || switchingCycle}
+                title={prevCycle ? `Lihat ${prevCycle.label}` : 'Tidak ada siklus sebelumnya'}
+                className="p-1.5 rounded-lg hover:bg-white hover:text-slate-900 disabled:opacity-30 text-slate-600 transition-all cursor-pointer"
               >
-                {allCycles.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.label} {c.status === 'open' ? '• Aktif' : c.status === 'draft' ? '• Draft' : '• Selesai'}
-                  </option>
-                ))}
-              </select>
-              <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-1 top-1/2 -translate-y-1/2 pointer-events-none" />
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+
+              <div className="relative px-3">
+                <select
+                  value={cycle.id}
+                  onChange={(e) => fetchDashboard(e.target.value)}
+                  disabled={switchingCycle}
+                  className="bg-transparent appearance-none font-bold text-slate-900 text-sm pr-6 py-0.5 focus:outline-none cursor-pointer tracking-tight"
+                >
+                  {allCycles.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.label} {c.status === 'open' ? '• Buka' : c.status === 'draft' ? '• Draf' : '• Selesai'}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-1.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+              </div>
+
+              <button
+                onClick={() => nextCycle && fetchDashboard(nextCycle.id)}
+                disabled={!nextCycle || switchingCycle}
+                title={nextCycle ? `Lihat ${nextCycle.label}` : 'Tidak ada siklus berikutnya'}
+                className="p-1.5 rounded-lg hover:bg-white hover:text-slate-900 disabled:opacity-30 text-slate-600 transition-all cursor-pointer"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
             </div>
 
-            <button
-              onClick={() => nextCycle && fetchDashboard(nextCycle.id)}
-              disabled={!nextCycle || switchingCycle}
-              title={nextCycle ? `Lihat ${nextCycle.label}` : 'Tidak ada siklus berikutnya'}
-              className="p-1.5 rounded-md hover:bg-white hover:text-slate-900 disabled:opacity-25 disabled:hover:bg-transparent text-slate-600 transition-all cursor-pointer"
+            {/* State Pill */}
+            <span
+              className={`inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full font-semibold border ${
+                cycle.status === 'open'
+                  ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                  : cycle.status === 'draft'
+                  ? 'bg-amber-50 text-amber-800 border-amber-200'
+                  : 'bg-slate-100 text-slate-700 border-slate-200'
+              }`}
             >
-              <ChevronRight className="w-4 h-4" />
-            </button>
-          </div>
-
-          {/* Status Badge */}
-          <span
-            className={`inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full font-semibold border ${
-              cycle.status === 'open'
-                ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                : cycle.status === 'draft'
-                ? 'bg-amber-50 text-amber-700 border-amber-200'
-                : 'bg-slate-100 text-slate-600 border-slate-200'
-            }`}
-          >
-            {cycle.status === 'open' ? (
-              <>
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                Siklus Aktif
-              </>
-            ) : cycle.status === 'draft' ? (
-              'Draft'
-            ) : (
-              'Arsip Selesai'
-            )}
-          </span>
-
-          {switchingCycle && (
-            <span className="text-xs text-slate-400 italic animate-pulse">Memuat...</span>
-          )}
-        </div>
-
-        <Link
-          href="/cycles"
-          className="text-xs font-semibold text-emerald-600 hover:text-emerald-700 flex items-center gap-1 self-end sm:self-auto"
-        >
-          Kelola Semua Siklus
-          <ArrowRight className="w-3.5 h-3.5" />
-        </Link>
-      </div>
-
-      {/* Header Banner */}
-      <div className="bg-gradient-to-r from-emerald-700 via-emerald-800 to-teal-900 rounded-2xl p-6 sm:p-8 text-white shadow-md relative overflow-hidden">
-        <div className="relative z-10 flex flex-col md:flex-row md:items-center md:justify-between gap-6">
-          <div>
-            <span className="text-xs font-semibold text-emerald-300 uppercase tracking-wider block mb-1">
-              Periode {cycle.label}
+              {cycle.status === 'open' ? (
+                <>
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                  Siklus Aktif
+                </>
+              ) : cycle.status === 'draft' ? (
+                'Draf Persiapan'
+              ) : (
+                'Arsip Selesai'
+              )}
             </span>
-            <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight">
-              Dashboard Distribusi Sembako
-            </h1>
-            <p className="text-emerald-100/80 text-sm mt-1 max-w-xl">
-              Pantau target ayam & tahu mingguan, kepatuhan rotasi giliran anggota, dan rekap pembayaran.
-            </p>
+
+            {switchingCycle && (
+              <span className="text-xs text-slate-500 italic animate-pulse">Memuat data siklus...</span>
+            )}
           </div>
 
-          <div className="flex flex-wrap items-center gap-3">
+          {/* Fast Actions Deck */}
+          <div className="flex items-center gap-2.5 self-start lg:self-auto">
             <Link
               href={`/cycles/${cycle.id}`}
-              className="inline-flex items-center gap-2 bg-white text-emerald-900 hover:bg-emerald-50 font-semibold px-4 py-2.5 rounded-lg text-sm shadow-sm transition-all"
             >
-              Lihat Rekap Siklus
-              <ArrowRight className="w-4 h-4" />
+              <Button variant="secondary" size="sm" icon={<MessageSquare className="w-3.5 h-3.5 text-emerald-700" />}>
+                Rekap WhatsApp
+              </Button>
             </Link>
             <Link
               href="/orders"
-              className="inline-flex items-center gap-2 bg-emerald-600/80 hover:bg-emerald-600 text-white border border-emerald-400/30 font-medium px-4 py-2.5 rounded-lg text-sm transition-all"
             >
-              <ShoppingCart className="w-4 h-4" />
-              Input Pesanan
+              <Button variant="primary" size="sm" icon={<Plus className="w-3.5 h-3.5" />}>
+                Input Pesanan
+              </Button>
             </Link>
           </div>
         </div>
 
-        {/* Cycle Milestone Dates */}
-        <div className="mt-6 pt-6 border-t border-emerald-600/40 grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
-          <div className="flex items-center gap-2.5 text-emerald-100">
-            <Calendar className="w-4 h-4 text-emerald-300 shrink-0" />
+        {/* Milestone Timeline Rail */}
+        <div className="border-t border-slate-100 bg-slate-50/70 px-4 sm:px-5 py-3 grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+          <div className="flex items-center gap-2.5">
+            <div className="w-6 h-6 rounded-md bg-emerald-100/80 text-emerald-800 flex items-center justify-center font-bold text-[10px] shrink-0">
+              01
+            </div>
             <div>
-              <span className="text-emerald-300/80 font-medium block">Mulai Order (Sabtu)</span>
-              <span className="font-semibold text-white">{formatDate(cycle.periodStart)}</span>
+              <span className="text-slate-500 text-[11px] block">Order Dibuka (Sabtu)</span>
+              <span className="font-semibold text-slate-800 tabular-nums">{formatDate(cycle.periodStart)}</span>
             </div>
           </div>
-          <div className="flex items-center gap-2.5 text-emerald-100">
-            <Clock className="w-4 h-4 text-amber-300 shrink-0" />
+
+          <div className="flex items-center gap-2.5">
+            <div className="w-6 h-6 rounded-md bg-amber-100/80 text-amber-800 flex items-center justify-center font-bold text-[10px] shrink-0">
+              02
+            </div>
             <div>
-              <span className="text-amber-300/80 font-medium block">Deadline Rekap (Selasa)</span>
-              <span className="font-semibold text-white">{formatDate(cycle.orderDeadline)}</span>
+              <span className="text-amber-800 font-semibold text-[11px] block">Deadline Rekap Supplier (Selasa)</span>
+              <span className="font-bold text-slate-900 tabular-nums">{formatDate(cycle.orderDeadline)}</span>
             </div>
           </div>
-          <div className="flex items-center gap-2.5 text-emerald-100">
-            <CheckCircle2 className="w-4 h-4 text-teal-300 shrink-0" />
+
+          <div className="flex items-center gap-2.5">
+            <div className="w-6 h-6 rounded-md bg-sky-100/80 text-sky-800 flex items-center justify-center font-bold text-[10px] shrink-0">
+              03
+            </div>
             <div>
-              <span className="text-teal-300/80 font-medium block">Distribusi Tiba (Kamis)</span>
-              <span className="font-semibold text-white">{formatDate(cycle.deliveryDate)}</span>
+              <span className="text-slate-500 text-[11px] block">Distribusi Tiba (Kamis)</span>
+              <span className="font-semibold text-slate-800 tabular-nums">{formatDate(cycle.deliveryDate)}</span>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Target Products Progress Cards (Ayam & Tahu) */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {targets.map((target) => {
-          const remaining = Math.max(0, target.targetQuantity - target.actualQuantity)
-          return (
-            <div
-              key={target.id}
-              className="bg-white rounded-xl border border-slate-200 p-5 shadow-xs relative overflow-hidden"
-            >
-              <div className="flex items-start justify-between mb-3">
+      {/* 2. TARGET QUOTA COMMAND COCKPIT (Ayam & Tahu Twin Gauges) */}
+      <div className="bg-white border border-slate-200/90 rounded-2xl p-5 sm:p-6 shadow-xs">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-5 pb-4 border-b border-slate-100">
+          <div>
+            <h2 className="text-base font-extrabold text-slate-900 tracking-tight flex items-center gap-2">
+              <span>Status Kuota Supplier Level 4</span>
+              <span className="text-[11px] font-semibold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200/50">
+                Target Mingguan
+              </span>
+            </h2>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Ambang batas minimum pemesanan grosir: 20 kg Ayam Potong & 20 bungkus Tahu Putih.
+            </p>
+          </div>
+          <Link
+            href={`/cycles/${cycle.id}`}
+            className="text-xs font-semibold text-emerald-700 hover:text-emerald-800 flex items-center gap-1 self-start sm:self-auto"
+          >
+            Rincian & Rekapitulasi
+            <ArrowRight className="w-3.5 h-3.5" />
+          </Link>
+        </div>
+
+        {/* Twin Gauges Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {targets.map((target) => {
+            const remaining = Math.max(0, target.targetQuantity - target.actualQuantity)
+            const isMet = target.isMet
+            return (
+              <div
+                key={target.id}
+                className="p-4 sm:p-5 rounded-xl bg-slate-50/60 border border-slate-200/80 flex flex-col justify-between"
+              >
                 <div>
-                  <span className="text-xs font-semibold text-emerald-600 uppercase tracking-wider">
-                    Target Mingguan
-                  </span>
-                  <h3 className="text-lg font-bold text-slate-900 mt-0.5">{target.name}</h3>
-                </div>
-                {target.isMet ? (
-                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                    <CheckCircle2 className="w-3.5 h-3.5" />
-                    Target Tercapai!
-                  </span>
-                ) : (
-                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200">
-                    <AlertCircle className="w-3.5 h-3.5" />
-                    Kurang {remaining} {target.unit}
-                  </span>
-                )}
-              </div>
-
-              <div className="space-y-2">
-                <div className="flex justify-between items-baseline text-sm">
-                  <span className="text-2xl font-black text-slate-900">
-                    {target.actualQuantity}{' '}
-                    <span className="text-sm font-normal text-slate-500">
-                      / {target.targetQuantity} {target.unit}
-                    </span>
-                  </span>
-                  <span className="font-bold text-slate-700">{target.percentage}%</span>
-                </div>
-
-                {/* Progress bar */}
-                <div className="w-full h-3 bg-slate-100 rounded-full overflow-hidden">
-                  <div
-                    className={`h-full transition-all duration-500 rounded-full ${
-                      target.isMet ? 'bg-emerald-500' : 'bg-amber-500'
-                    }`}
-                    style={{ width: `${Math.min(100, target.percentage)}%` }}
-                  />
-                </div>
-
-                {/* Variant Breakdown (For Ayam Campur & Tahu Campur) */}
-                {target.breakdown && (
-                  <div className="flex flex-wrap items-center gap-1.5 pt-1.5">
-                    {target.breakdown.map((b: any) => (
-                      <span
-                        key={b.name}
-                        className="text-[11px] font-medium bg-slate-100 text-slate-700 px-2 py-0.5 rounded-md"
-                      >
-                        {b.name}: <strong className="font-bold text-slate-900">{b.quantity} {target.unit}</strong>
+                  {/* Top line: Name & Status */}
+                  <div className="flex items-center justify-between gap-2 mb-3">
+                    <h3 className="font-extrabold text-slate-900 text-base tracking-tight">
+                      {target.name}
+                    </h3>
+                    {isMet ? (
+                      <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-800 bg-emerald-100/80 px-2.5 py-0.5 rounded-full border border-emerald-200">
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-700" />
+                        Kuota Terpenuhi
                       </span>
-                    ))}
+                    ) : (
+                      <span className="inline-flex items-center gap-1 text-xs font-bold text-amber-800 bg-amber-100/80 px-2.5 py-0.5 rounded-full border border-amber-200">
+                        <AlertCircle className="w-3.5 h-3.5 text-amber-700" />
+                        Kurang <span className="tabular-nums">{remaining}</span> {target.unit}
+                      </span>
+                    )}
                   </div>
-                )}
 
-                {/* Stock Carryover & Leftover Info */}
-                <div className="pt-2 mt-2 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
+                  {/* Big Number Readout */}
+                  <div className="flex items-baseline justify-between mb-2">
+                    <div className="text-3xl font-black text-slate-900 tracking-tight tabular-nums">
+                      {target.actualQuantity}
+                      <span className="text-sm font-semibold text-slate-500 ml-1.5">
+                        / {target.targetQuantity} {target.unit}
+                      </span>
+                    </div>
+                    <div className="text-right">
+                      <span className={`text-base font-extrabold tabular-nums ${isMet ? 'text-emerald-700' : 'text-amber-700'}`}>
+                        {target.percentage}%
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Tactile Gauge Bar */}
+                  <div className="w-full h-3 bg-slate-200/80 rounded-full overflow-hidden p-0.5">
+                    <div
+                      className={`h-full rounded-full transition-all duration-500 ${
+                        isMet ? 'bg-emerald-600' : 'bg-amber-500'
+                      }`}
+                      style={{ width: `${Math.min(100, target.percentage)}%` }}
+                    />
+                  </div>
+
+                  {/* Variant breakdown tags */}
+                  {target.breakdown && target.breakdown.length > 0 && (
+                    <div className="mt-3 flex flex-wrap items-center gap-1.5">
+                      {target.breakdown.map((b: any) => (
+                        <span
+                          key={b.name}
+                          className="text-[11px] font-medium bg-white text-slate-700 border border-slate-200/80 px-2 py-0.5 rounded-md tabular-nums"
+                        >
+                          {b.name}: <strong className="font-bold text-slate-900">{b.quantity} {target.unit}</strong>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Footer notes */}
+                <div className="mt-4 pt-3 border-t border-slate-200/60 flex items-center justify-between text-xs text-slate-500">
                   <span>
-                    Stok awal lalu: <strong className="text-slate-700">{target.beginningStock || 0} {target.unit}</strong>
+                    Stok awal: <strong className="text-slate-700 tabular-nums">{target.beginningStock || 0} {target.unit}</strong>
                   </span>
-                  <span className={(target.unsoldStock ?? 0) > 0 ? 'text-amber-700 font-semibold' : 'text-slate-700'}>
-                    Sisa belum terjual: <strong>{target.unsoldStock ?? 0} {target.unit}</strong>
+                  <span className={(target.unsoldStock ?? 0) > 0 ? 'text-amber-700 font-semibold' : 'text-slate-600'}>
+                    Sisa belum terjual: <strong className="tabular-nums">{target.unsoldStock ?? 0} {target.unit}</strong>
                   </span>
                 </div>
               </div>
-            </div>
-          )
-        })}
+            )
+          })}
+        </div>
       </div>
 
-      {/* Grid of Key Metrics: Rotation & Payments */}
+      {/* 3. OPERATIONAL MATRIX (Asymmetric: Roster Ledger on Left, Financial on Right) */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Rotation Compliance Card */}
-        <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-xs flex flex-col">
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2">
-              <Users className="w-5 h-5 text-emerald-600" />
-              <h3 className="font-bold text-slate-900 text-base">Rotasi Siklus Ini</h3>
-            </div>
-            <Link
-              href={`/cycles/${cycle.id}`}
-              className="text-xs font-semibold text-emerald-600 hover:text-emerald-700"
-            >
-              Kelola
-            </Link>
-          </div>
-
-          <div className="p-3.5 bg-slate-50 rounded-xl mb-3">
-            <div className="flex items-center justify-between">
+        {/* LEFT COLUMN (Span 2): Member Rotation & Order Roster */}
+        <div className="lg:col-span-2 bg-white border border-slate-200/90 rounded-2xl p-5 sm:p-6 shadow-xs flex flex-col justify-between">
+          <div>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4 pb-3 border-b border-slate-100">
               <div>
-                <p className="text-xs text-slate-500 font-medium">Anggota Terjadwal</p>
-                <p className="text-xl font-black text-slate-900 mt-0.5">
-                  {rotation?.orderedCount}{' '}
-                  <span className="text-sm font-normal text-slate-500">
-                    / {rotation?.scheduledCount}
-                  </span>
+                <div className="flex items-center gap-2">
+                  <Users className="w-5 h-5 text-emerald-700" />
+                  <h3 className="font-extrabold text-slate-900 text-base tracking-tight">
+                    Jadwal Rotasi Giliran Anggota
+                  </h3>
+                </div>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Partisipasi rotasi memastikan target kuota mingguan tercapai merata di setiap sub-grup.
                 </p>
               </div>
-              <div className="text-right">
-                <p className="text-xs text-slate-500 font-medium">Partisipasi</p>
-                <p className="text-lg font-bold text-emerald-600 mt-0.5">{rotation?.percentage}%</p>
+
+              <div className="flex items-center gap-2 text-xs font-semibold tabular-nums self-start sm:self-auto">
+                <span className="text-slate-600">Partisipasi:</span>
+                <span className="text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200/50">
+                  {rotation?.orderedCount} / {rotation?.scheduledCount} ({rotation?.percentage}%)
+                </span>
               </div>
             </div>
-            <div className="w-full h-1.5 bg-slate-200 rounded-full mt-2.5 overflow-hidden">
-              <div
-                className="h-full bg-emerald-500 rounded-full transition-all duration-500"
-                style={{ width: `${rotation?.percentage || 0}%` }}
-              />
+
+            {/* Tactile Segment Filter */}
+            <div className="inline-flex bg-slate-100 p-1 rounded-xl mb-3 text-xs font-medium w-full sm:w-auto">
+              <button
+                onClick={() => setRotationFilter('all')}
+                className={`flex-1 sm:flex-none px-3.5 py-1.5 rounded-lg text-center transition-all cursor-pointer ${
+                  rotationFilter === 'all'
+                    ? 'bg-white text-slate-900 font-bold shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                Semua ({scheduledMembers.length})
+              </button>
+              <button
+                onClick={() => setRotationFilter('pending')}
+                className={`flex-1 sm:flex-none px-3.5 py-1.5 rounded-lg text-center transition-all cursor-pointer ${
+                  rotationFilter === 'pending'
+                    ? 'bg-white text-amber-800 font-bold shadow-xs'
+                    : 'text-slate-600 hover:text-amber-700'
+                }`}
+              >
+                Belum Order ({pendingCount})
+              </button>
+              <button
+                onClick={() => setRotationFilter('ordered')}
+                className={`flex-1 sm:flex-none px-3.5 py-1.5 rounded-lg text-center transition-all cursor-pointer ${
+                  rotationFilter === 'ordered'
+                    ? 'bg-white text-emerald-800 font-bold shadow-xs'
+                    : 'text-slate-600 hover:text-emerald-700'
+                }`}
+              >
+                Sudah Order ({orderedCount})
+              </button>
             </div>
-          </div>
 
-          {/* Filter Pills */}
-          <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-lg mb-2.5 text-[11px] font-medium">
-            <button
-              onClick={() => setRotationFilter('all')}
-              className={`flex-1 py-1 rounded-md text-center transition-all ${
-                rotationFilter === 'all'
-                  ? 'bg-white text-slate-900 font-bold shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              Semua ({scheduledMembers.length})
-            </button>
-            <button
-              onClick={() => setRotationFilter('pending')}
-              className={`flex-1 py-1 rounded-md text-center transition-all ${
-                rotationFilter === 'pending'
-                  ? 'bg-white text-amber-800 font-bold shadow-xs'
-                  : 'text-slate-600 hover:text-amber-700'
-              }`}
-            >
-              Belum ({pendingCount})
-            </button>
-            <button
-              onClick={() => setRotationFilter('ordered')}
-              className={`flex-1 py-1 rounded-md text-center transition-all ${
-                rotationFilter === 'ordered'
-                  ? 'bg-white text-emerald-800 font-bold shadow-xs'
-                  : 'text-slate-600 hover:text-emerald-700'
-              }`}
-            >
-              Sudah ({orderedCount})
-            </button>
-          </div>
+            {/* Congratulatory Alert if all have ordered */}
+            {pendingCount === 0 && scheduledMembers.length > 0 && (
+              <div className="mb-3 p-3 bg-emerald-50 border border-emerald-200/80 rounded-xl text-xs text-emerald-800 font-medium flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-emerald-700 shrink-0" />
+                <span>Luar biasa! Seluruh anggota giliran rotasi minggu ini telah menginput pesanan.</span>
+              </div>
+            )}
 
-          {/* Celebration banner if all members have ordered */}
-          {pendingCount === 0 && scheduledMembers.length > 0 && (
-            <div className="mb-2.5 p-2 bg-emerald-50 border border-emerald-200/80 rounded-lg text-xs text-emerald-800 font-medium flex items-center gap-1.5">
-              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-              <span>Semua anggota terjadwal sudah memesan!</span>
-            </div>
-          )}
-
-          <div className="flex-1">
-            {filteredRotationMembers.length === 0 ? (
-              <p className="text-xs text-slate-400 italic py-6 text-center">
-                {scheduledMembers.length === 0
-                  ? 'Belum ada anggota yang dijadwalkan.'
-                  : rotationFilter === 'pending'
-                  ? 'Semua anggota sudah memesan.'
-                  : 'Belum ada anggota yang memesan.'}
-              </p>
-            ) : (
-              <div className="space-y-1.5 max-h-56 overflow-y-auto pr-1">
-                {filteredRotationMembers.map((m) => (
+            {/* Member Ledger List */}
+            <div className="divide-y divide-slate-100 max-h-80 overflow-y-auto pr-1">
+              {filteredRotationMembers.length === 0 ? (
+                <p className="text-xs text-slate-500 italic py-8 text-center">
+                  {scheduledMembers.length === 0
+                    ? 'Belum ada anggota yang dijadwalkan pada siklus ini.'
+                    : rotationFilter === 'pending'
+                    ? 'Seluruh anggota yang dijadwalkan sudah memesan.'
+                    : 'Belum ada anggota yang memesan.'}
+                </p>
+              ) : (
+                filteredRotationMembers.map((m) => (
                   <div
                     key={m.id}
-                    className={`flex items-center justify-between p-2 rounded-lg border text-xs transition-colors ${
-                      m.isOrdered
-                        ? 'bg-emerald-50/40 border-emerald-100 hover:bg-emerald-50/70'
-                        : 'bg-amber-50/30 border-amber-100 hover:bg-amber-50/60'
-                    }`}
+                    className="py-2.5 flex items-center justify-between gap-3 hover:bg-slate-50/80 px-2 rounded-lg transition-colors"
                   >
-                    <div className="min-w-0 pr-2">
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        <span className="font-bold text-slate-800 truncate">{m.name}</span>
-                        {m.role === 'pengurus' && (
-                          <span className="text-[10px] bg-purple-100 text-purple-700 px-1.5 py-0.2 rounded font-semibold">
-                            Pengurus
-                          </span>
-                        )}
-                        {m.role === 'pj' && (
-                          <span className="text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.2 rounded font-semibold">
-                            PJ
-                          </span>
-                        )}
+                    <div className="min-w-0 flex items-center gap-2.5">
+                      <div className="w-7 h-7 rounded-full bg-slate-100 border border-slate-200/80 flex items-center justify-center font-bold text-[11px] text-slate-700 shrink-0">
+                        {m.name.charAt(0).toUpperCase()}
                       </div>
-                      <p className="text-slate-500 text-[11px] mt-0.5">{m.groupName}</p>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="font-bold text-slate-900 text-xs truncate">{m.name}</span>
+                          {m.role === 'pengurus' && (
+                            <span className="text-[10px] bg-purple-100 text-purple-800 px-1.5 py-0.5 rounded font-semibold">
+                              Pengurus
+                            </span>
+                          )}
+                          {m.role === 'pj' && (
+                            <span className="text-[10px] bg-sky-100 text-sky-800 px-1.5 py-0.5 rounded font-semibold">
+                              PJ
+                            </span>
+                          )}
+                        </div>
+                        <span className="text-[11px] text-slate-500 block truncate">{m.groupName}</span>
+                      </div>
                     </div>
 
-                    <div className="flex items-center gap-1.5 shrink-0">
+                    <div className="flex items-center gap-2 shrink-0">
                       {m.isOrdered ? (
-                        <span className="inline-flex items-center gap-1 text-[11px] font-semibold bg-emerald-100 text-emerald-800 px-2.5 py-0.5 rounded-full">
-                          <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                        <span className="inline-flex items-center gap-1 text-[11px] font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200/70 px-2.5 py-0.5 rounded-full">
+                          <CheckCircle2 className="w-3 h-3 text-emerald-700" />
                           Sudah Order
                         </span>
                       ) : (
-                        <>
-                          <span className="inline-flex items-center gap-1 text-[11px] font-semibold bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full">
+                        <div className="flex items-center gap-1.5">
+                          <span className="inline-flex items-center gap-1 text-[11px] font-semibold bg-amber-50 text-amber-800 border border-amber-200/70 px-2 py-0.5 rounded-full">
                             <Clock className="w-3 h-3 text-amber-600" />
                             Belum
                           </span>
@@ -541,214 +539,141 @@ export default function DashboardPage() {
                             target="_blank"
                             rel="noopener noreferrer"
                             title="Kirim pesan WA"
-                            className="inline-flex items-center gap-1 text-[11px] font-semibold bg-emerald-600 hover:bg-emerald-700 text-white px-2 py-0.5 rounded-md transition-colors shadow-xs"
+                            className="inline-flex items-center gap-1 text-[11px] font-semibold bg-emerald-700 hover:bg-emerald-800 text-white px-2.5 py-1 rounded-lg transition-colors shadow-2xs"
                           >
                             <MessageSquare className="w-3 h-3" />
-                            WA
+                            Ingatkan
                           </a>
-                        </>
+                        </div>
                       )}
                     </div>
                   </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Payment Summary Card */}
-        <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-xs flex flex-col">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-2">
-              <CreditCard className="w-5 h-5 text-emerald-600" />
-              <h3 className="font-bold text-slate-900 text-base">Rekap Pembayaran</h3>
+                ))
+              )}
             </div>
-            <Link
-              href="/orders"
-              className="text-xs font-semibold text-emerald-600 hover:text-emerald-700"
-            >
-              Semua Pesanan
-            </Link>
           </div>
 
-          <div className="space-y-3 flex-1 flex flex-col justify-between">
-            <div className="p-4 bg-slate-50 rounded-xl">
-              <span className="text-xs text-slate-500 font-medium block">Total Nilai Pesanan</span>
-              <span className="text-2xl font-black text-slate-900">
-                {formatCurrency(payments?.totalBilling || 0)}
-              </span>
-              <span className="text-xs text-slate-400 block mt-1">
-                Dari {payments?.totalOrders || 0} pesanan masuk
-              </span>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div className="p-3 bg-emerald-50/70 border border-emerald-100 rounded-xl">
-                <div className="flex items-center gap-1.5 text-emerald-700 text-xs font-semibold mb-1">
-                  <CheckCircle2 className="w-3.5 h-3.5" />
-                  Sudah Bayar
-                </div>
-                <p className="text-base font-bold text-emerald-900">
-                  {formatCurrency(payments?.paidAmount || 0)}
-                </p>
-                <p className="text-[11px] text-emerald-700 mt-0.5">
-                  {payments?.paidCount || 0} pesanan
-                </p>
-              </div>
-
-              <div className="p-3 bg-rose-50/70 border border-rose-100 rounded-xl">
-                <div className="flex items-center gap-1.5 text-rose-700 text-xs font-semibold mb-1">
-                  <AlertCircle className="w-3.5 h-3.5" />
-                  Belum Bayar
-                </div>
-                <p className="text-base font-bold text-rose-900">
-                  {formatCurrency(payments?.unpaidAmount || 0)}
-                </p>
-                <p className="text-[11px] text-rose-700 mt-0.5">
-                  {payments?.unpaidCount || 0} pesanan
-                </p>
-              </div>
-            </div>
-
+          <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
+            <span>Kelola giliran rotasi anggota untuk siklus mendatang</span>
             <Link
               href={`/cycles/${cycle.id}`}
-              className="w-full text-center py-2 px-3 rounded-lg bg-slate-100 hover:bg-slate-200 text-xs font-semibold text-slate-700 transition-colors"
+              className="font-semibold text-emerald-700 hover:text-emerald-800 flex items-center gap-1"
             >
-              Export Rekap Teks WhatsApp
+              Buka Manajemen Rotasi
+              <ArrowRight className="w-3.5 h-3.5" />
             </Link>
           </div>
         </div>
 
-        {/* Quick Actions & Community Overview */}
-        <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-xs flex flex-col justify-between">
-          <div>
-            <div className="flex items-center gap-2 mb-4">
-              <TrendingUp className="w-5 h-5 text-emerald-600" />
-              <h3 className="font-bold text-slate-900 text-base">Aksi Cepat & Navigasi</h3>
+        {/* RIGHT COLUMN (Span 1): Financial Command & Fast Navigation */}
+        <div className="space-y-6">
+          {/* Financial Balance Card */}
+          <div className="bg-white border border-slate-200/90 rounded-2xl p-5 shadow-xs">
+            <div className="flex items-center justify-between mb-3 pb-2 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <CreditCard className="w-4.5 h-4.5 text-emerald-700" />
+                <h3 className="font-extrabold text-slate-900 text-sm tracking-tight">
+                  Rekap Billing & Kas
+                </h3>
+              </div>
+              <Link
+                href="/orders"
+                className="text-xs font-semibold text-emerald-700 hover:text-emerald-800"
+              >
+                Semua Order
+              </Link>
+            </div>
+
+            {/* Total Readout */}
+            <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/70 mb-3">
+              <span className="text-xs text-slate-500 font-medium block">Total Nilai Pesanan Masuk</span>
+              <div className="text-2xl font-black text-slate-900 tracking-tight tabular-nums mt-0.5">
+                {formatCurrency(payments?.totalBilling || 0)}
+              </div>
+              <span className="text-[11px] text-slate-500 block mt-1">
+                Tercatat dari <strong className="text-slate-800 tabular-nums">{payments?.totalOrders || 0}</strong> pesanan
+              </span>
+            </div>
+
+            {/* Split Balance Grid */}
+            <div className="grid grid-cols-2 gap-2.5">
+              <div className="p-3 rounded-xl bg-emerald-50/70 border border-emerald-200/60">
+                <span className="text-[11px] font-bold text-emerald-800 block mb-0.5">
+                  Sudah Lunas
+                </span>
+                <span className="text-sm font-black text-emerald-950 tabular-nums block">
+                  {formatCurrency(payments?.paidAmount || 0)}
+                </span>
+                <span className="text-[10px] text-emerald-700 tabular-nums mt-0.5 block">
+                  {payments?.paidCount || 0} pesanan
+                </span>
+              </div>
+
+              <div className="p-3 rounded-xl bg-rose-50/70 border border-rose-200/60">
+                <span className="text-[11px] font-bold text-rose-800 block mb-0.5">
+                  Belum Bayar
+                </span>
+                <span className="text-sm font-black text-rose-950 tabular-nums block">
+                  {formatCurrency(payments?.unpaidAmount || 0)}
+                </span>
+                <span className="text-[10px] text-rose-700 tabular-nums mt-0.5 block">
+                  {payments?.unpaidCount || 0} pesanan
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Operational Workflow Card */}
+          <div className="bg-white border border-slate-200/90 rounded-2xl p-5 shadow-xs">
+            <div className="flex items-center gap-2 mb-3 pb-2 border-b border-slate-100">
+              <TrendingUp className="w-4.5 h-4.5 text-emerald-700" />
+              <h3 className="font-extrabold text-slate-900 text-sm tracking-tight">
+                Alur Kerja Mingguan
+              </h3>
             </div>
 
             <div className="space-y-2">
               <Link
                 href="/orders"
-                className="flex items-center justify-between p-3 rounded-xl border border-slate-200 hover:border-emerald-300 hover:bg-emerald-50/40 transition-all text-sm font-medium text-slate-800"
+                className="flex items-center justify-between p-3 rounded-xl border border-slate-200/80 hover:border-emerald-300 hover:bg-emerald-50/40 transition-all text-xs font-medium text-slate-800 group"
               >
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center">
-                    <ShoppingCart className="w-4 h-4" />
+                <div className="flex items-center gap-2.5">
+                  <div className="w-7 h-7 rounded-lg bg-emerald-100 text-emerald-800 flex items-center justify-center">
+                    <ShoppingCart className="w-3.5 h-3.5" />
                   </div>
-                  <span>Input Pesanan Baru</span>
+                  <span>Entri Pesanan Anggota</span>
                 </div>
-                <ArrowRight className="w-4 h-4 text-slate-400" />
+                <ArrowRight className="w-3.5 h-3.5 text-slate-400 group-hover:text-emerald-700 transition-colors" />
               </Link>
 
               <Link
                 href={`/cycles/${cycle.id}`}
-                className="flex items-center justify-between p-3 rounded-xl border border-slate-200 hover:border-emerald-300 hover:bg-emerald-50/40 transition-all text-sm font-medium text-slate-800"
+                className="flex items-center justify-between p-3 rounded-xl border border-slate-200/80 hover:border-emerald-300 hover:bg-emerald-50/40 transition-all text-xs font-medium text-slate-800 group"
               >
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-lg bg-teal-100 text-teal-700 flex items-center justify-center">
-                    <Package className="w-4 h-4" />
+                <div className="flex items-center gap-2.5">
+                  <div className="w-7 h-7 rounded-lg bg-amber-100 text-amber-800 flex items-center justify-center">
+                    <MessageSquare className="w-3.5 h-3.5" />
                   </div>
-                  <span>Ubah Harga Mingguan</span>
+                  <span>Ekspor Rekap Supplier (L4)</span>
                 </div>
-                <ArrowRight className="w-4 h-4 text-slate-400" />
+                <ArrowRight className="w-3.5 h-3.5 text-slate-400 group-hover:text-emerald-700 transition-colors" />
               </Link>
 
               <Link
-                href="/members"
-                className="flex items-center justify-between p-3 rounded-xl border border-slate-200 hover:border-emerald-300 hover:bg-emerald-50/40 transition-all text-sm font-medium text-slate-800"
+                href="/reports"
+                className="flex items-center justify-between p-3 rounded-xl border border-slate-200/80 hover:border-emerald-300 hover:bg-emerald-50/40 transition-all text-xs font-medium text-slate-800 group"
               >
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-lg bg-sky-100 text-sky-700 flex items-center justify-center">
-                    <Users className="w-4 h-4" />
+                <div className="flex items-center gap-2.5">
+                  <div className="w-7 h-7 rounded-lg bg-sky-100 text-sky-800 flex items-center justify-center">
+                    <Package className="w-3.5 h-3.5" />
                   </div>
-                  <span>Daftar Anggota ({data.totalMembers || 0})</span>
+                  <span>Penerimaan Barang & Margin</span>
                 </div>
-                <ArrowRight className="w-4 h-4 text-slate-400" />
-              </Link>
-
-              <Link
-                href="/ranking"
-                className="flex items-center justify-between p-3 rounded-xl border border-slate-200 hover:border-emerald-300 hover:bg-emerald-50/40 transition-all text-sm font-medium text-slate-800"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center">
-                    <Sparkles className="w-4 h-4" />
-                  </div>
-                  <span>Peringkat & Keaktifan</span>
-                </div>
-                <ArrowRight className="w-4 h-4 text-slate-400" />
+                <ArrowRight className="w-3.5 h-3.5 text-slate-400 group-hover:text-emerald-700 transition-colors" />
               </Link>
             </div>
           </div>
-
-          <div className="p-3 bg-slate-50 rounded-xl text-xs text-slate-500 mt-4 border border-slate-100">
-            <span className="font-semibold text-slate-700 block">💡 Tips Distribusi:</span>
-            Rekap pesanan otomatis dipersiapkan dengan format rapi untuk disalin langsung ke grup supplier Level 4 pada hari Selasa.
-          </div>
         </div>
-      </div>
-
-      {/* Recent Orders Section */}
-      <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-xs">
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h3 className="font-bold text-slate-900 text-base">Pesanan Terbaru Siklus Ini</h3>
-            <p className="text-xs text-slate-500">Menampilkan pesanan yang baru masuk</p>
-          </div>
-          <Link
-            href="/orders"
-            className="text-xs font-semibold text-emerald-600 hover:text-emerald-700 flex items-center gap-1"
-          >
-            Lihat Semua Pesanan
-            <ArrowRight className="w-3.5 h-3.5" />
-          </Link>
-        </div>
-
-        {recentOrders.length === 0 ? (
-          <p className="text-sm text-slate-500 text-center py-6">Belum ada pesanan masuk.</p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead className="bg-slate-50 text-slate-500 text-xs uppercase font-semibold border-y border-slate-100">
-                <tr>
-                  <th className="py-3 px-4">Nama Anggota</th>
-                  <th className="py-3 px-4">Sub-Grup</th>
-                  <th className="py-3 px-4">Total</th>
-                  <th className="py-3 px-4">Status Bayar</th>
-                  <th className="py-3 px-4">Status Kirim</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {recentOrders.map((order) => (
-                  <tr key={order.id} className="hover:bg-slate-50/70 transition-colors">
-                    <td className="py-3 px-4 font-semibold text-slate-900">{order.memberName}</td>
-                    <td className="py-3 px-4 text-slate-600 text-xs">{order.groupName}</td>
-                    <td className="py-3 px-4 font-bold text-slate-900">
-                      {formatCurrency(order.totalAmount)}
-                    </td>
-                    <td className="py-3 px-4">
-                      <span
-                        className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
-                          order.paymentStatus === 'paid'
-                            ? 'bg-emerald-50 text-emerald-700'
-                            : 'bg-rose-50 text-rose-700'
-                        }`}
-                      >
-                        {order.paymentStatus === 'paid' ? 'Lunas' : 'Belum Bayar'}
-                      </span>
-                    </td>
-                    <td className="py-3 px-4">
-                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-700">
-                        {order.orderStatus}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
       </div>
     </div>
   )
