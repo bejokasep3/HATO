@@ -6,9 +6,10 @@ Status: kandidat lokal untuk review. Dokumen ini tidak memberi izin migrasi atau
 
 - Repository/branch: `HATO`, `main`.
 - Base commit yang diverifikasi: `2c5beafd7d0a63491593dc87e21e91314434cd6d`.
-- Candidate commit: belum dibuat; perubahan masih working tree bercampur dengan file yang sudah ada sebelum implementasi. Jangan sertakan `CPM-2027-Kalender-Design.pdf` atau `CPM-kalender-2027-konsep-01.pdf` ke commit HATO.
-- Web artifact lokal: `.next/`, dibuat oleh Next.js 16.3.4.
-- Native artifact lokal: `mobile/dist/t16-final/`, Expo SDK `~57.0.22`, React Native `0.86.3`.
+- Candidate kode: `106ae2c8922e2cf053a86c94a7f3c1f454369903`, branch `codex/hato-v2-review`; commit dokumentasi berikutnya mencatat hasil tanpa mengubah kode. Dua PDF kalender tidak disertakan.
+- Web artifact terkini: `.next/` pada clone bersih `C:/Users/Komputer/AppData/Local/Temp/hato-review-20261005`, dibuat oleh full `pnpm build` dengan Next.js 16.3.8 pada 5 Oktober 2026.
+- Native artifact terkini: `mobile/dist/review-20261005/` pada clone yang sama, Expo SDK 57.0.26, React Native `0.86.3`; iOS/Android/web lulus export.
+- Bukti verifikasi terkini: `evidence/2026-10-05-review-push.md`. Build memakai placeholder konfigurasi, bukan kredensial/database nyata.
 - Migration berurutan:
   1. `20260928113603_baseline`
   2. `20260928120000_operational_foundation`
@@ -23,7 +24,7 @@ Rilis tetap ditahan sampai seluruh poin ini selesai:
 3. Backup database nyata dipulihkan ke clone dan semua langkah di bawah lulus pada clone tersebut.
 4. Login admin nyata, penolakan nonadmin, dan akses Data API anon/authenticated diuji.
 5. Checklist iPhone Expo Go dan Android fisik lulus. Browser desktop 1440×900 dan web 390×844 juga belum diuji visual.
-6. Candidate commit dibuat dari file yang memang masuk scope, kemudian build diulang dari checkout bersih tanpa proses `next dev` yang mengunci Prisma engine.
+6. PASS pada 5 Oktober 2026: candidate commit dibuat dari file HATO yang masuk scope dan full build diulang dari clone bersih. Ulangi bila kode atau dependency berubah; perubahan dokumentasi saja tidak memerlukan build ulang.
 
 ## Persiapan clone data
 

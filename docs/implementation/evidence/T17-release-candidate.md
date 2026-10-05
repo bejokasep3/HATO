@@ -48,6 +48,6 @@ Percobaan integration gabungan awal gagal karena file test berbagi database dan 
 2. Saldo historis nyata belum direkonsiliasi dan migration belum diuji pada clone backup nyata.
 3. Login admin/nonadmin serta RLS/Data API nyata belum diverifikasi.
 4. Uji visual web dan perangkat fisik belum dilakukan; versi OS/Expo Go belum tersedia.
-5. Candidate commit bersih dan full `pnpm build` dari checkout bersih belum ada.
+5. Ditutup pada 5 Oktober 2026: kandidat `106ae2c` lulus full `pnpm build` dari clone bersih, web/mobile typecheck, 20/20 contract/domain tests, dan export tiga platform. Lihat `2026-10-05-review-push.md` untuk batas bukti dan warning yang tersisa.
 
 Runbook tindakan dan rollback: `docs/implementation/release-runbook.md`.

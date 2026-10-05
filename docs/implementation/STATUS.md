@@ -2,6 +2,8 @@
 
 Status kerja 30 September 2026: kandidat lokal reviewable dengan blocker eksplisit. Evidence T00-T04 di bawah adalah hasil sesi implementasi, bukan hasil review awal. Tidak ada deploy atau migrasi produksi.
 
+Pembaruan 5 Oktober 2026: kandidat kode `106ae2c` pada branch `codex/hato-v2-review` lulus install frozen-lockfile, full `pnpm build` dari clone bersih (Next.js 16.3.8), typecheck web/mobile, 20/20 contract/domain tests, serta export iOS/Android/web (Expo 57.0.26). Lint tanpa error, tetapi masih ada 60 warning web/server pada file yang berubah dan 23 warning mobile. Build/commit bersih bukan lagi blocker; blocker data/auth/perangkat tetap terbuka. Bukti terkini: `evidence/2026-10-05-review-push.md`. Bukti browser 4 Oktober hanya mencakup scope Dashboard/Orders yang tercatat pada `anti-slop/fix-003-2026-10-04.md` dan `anti-slop/fix-004-2026-10-04.md`.
+
 | Task | Status | Evidence | Langkah berikutnya |
 |---|---|---|---|
 | T00 | ACCEPTED | `evidence/T00-baseline.md`, `api-callers.md`, `product-mapping.md`, `data-readiness.md` | Katalog/cloud masih perlu bukti T05 |
