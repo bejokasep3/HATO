@@ -1,66 +1,40 @@
-import { NextResponse } from 'next/server'
+import { withAdmin } from '@/lib/auth/admin'
 import { prisma } from '@/lib/prisma'
+import { formatScaled, lineSubtotal, parseScaled, sumMoney } from '@/lib/domain/money'
+import { mutationErrorResponse } from '@/lib/services/mutation'
+import { NextResponse } from 'next/server'
 
-export async function GET() {
+async function GETImpl() {
   try {
     const products = await prisma.product.findMany({
       where: { isActive: true },
-      include: {
-        goodsReceiptItems: {
-          include: {
-            goodsReceipt: {
-              include: { cycle: true },
-            },
-          },
-          orderBy: { createdAt: 'desc' },
-        },
-      },
-      orderBy: [{ isTarget: 'desc' }, { sortOrder: 'asc' }, { name: 'asc' }],
+      include: { goodsReceiptItems: { include: { goodsReceipt: { include: { cycle: true } } }, orderBy: { createdAt: 'desc' } } },
+      orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
     })
-
-    const productStats = products.map((p) => {
-      const items = p.goodsReceiptItems
-      const totalReceived = items.reduce((sum, it) => sum + Number(it.receivedQty), 0)
-      const totalDamaged = items.reduce((sum, it) => sum + Number(it.damagedQty), 0)
-      const totalCostSpent = items.reduce(
-        (sum, it) => sum + Number(it.purchasePrice) * Number(it.receivedQty),
-        0
-      )
-
-      const latestItem = items[0]
-      const lastPurchasePrice = latestItem ? Number(latestItem.purchasePrice) : 0
-      const averagePurchasePrice = totalReceived > 0 ? Math.round(totalCostSpent / totalReceived) : 0
-
+    const rows = products.map((product) => {
+      const confirmed = product.goodsReceiptItems.filter((item) => item.goodsReceipt.status === 'confirmed')
+      const receivedLines = confirmed.filter((item) => item.receivedQty.greaterThan(0))
+      const latest = confirmed[0]
       return {
-        productId: p.id,
-        name: p.name,
-        unit: p.unit,
-        category: p.category,
-        isTarget: p.isTarget,
-        receiptsCount: items.length,
-        totalReceived,
-        totalDamaged,
-        lastPurchasePrice,
-        averagePurchasePrice,
-        totalCostSpent,
-        lastReceivedDate: latestItem?.goodsReceipt?.receivedAt || null,
-        lastCycleLabel: latestItem?.goodsReceipt?.cycle?.label || null,
+        productId: product.id, name: product.name, unit: product.unit,
+        targetGroup: product.targetGroup,
+        receiptsCount: confirmed.length,
+        totalReceived: formatScaled(confirmed.reduce((sum, item) => sum + parseScaled(item.receivedQty.toFixed(2), 2, 8), 0n)),
+        totalDamaged: formatScaled(confirmed.reduce((sum, item) => sum + parseScaled(item.damagedQty.toFixed(2), 2, 8), 0n)),
+        purchaseValue: receivedLines.every((item) => item.purchasePrice.greaterThan(0))
+          ? sumMoney(receivedLines.map((item) => lineSubtotal(item.purchasePrice.toFixed(2), item.receivedQty.toFixed(2))))
+          : null,
+        lastPurchasePrice: latest?.purchasePrice.toFixed(2) ?? null,
+        lastReceivedDate: latest?.goodsReceipt.receivedAt.toISOString() ?? null,
+        lastCycleLabel: latest?.goodsReceipt.cycle.label ?? null,
       }
     })
-
-    const totalSpend = productStats.reduce((sum, p) => sum + p.totalCostSpent, 0)
-    const totalDamagedItems = productStats.reduce((sum, p) => sum + p.totalDamaged, 0)
-
-    return NextResponse.json({
-      summary: {
-        totalSpend,
-        totalDamagedItems,
-        totalProductsTracked: products.length,
-      },
-      products: productStats,
-    })
-  } catch (error) {
-    console.error('Error fetching inventory summary:', error)
-    return NextResponse.json({ error: 'Failed to fetch inventory summary' }, { status: 500 })
-  }
+    return NextResponse.json({ summary: {
+      confirmedPurchaseValue: sumMoney(rows.flatMap((row) => row.purchaseValue === null ? [] : [row.purchaseValue])),
+      unknownPurchaseValueProductCount: rows.filter((row) => row.purchaseValue === null).length,
+      totalProductsTracked: rows.length,
+    }, products: rows })
+  } catch (error) { return mutationErrorResponse(error) }
 }
+
+export const GET = withAdmin(GETImpl)

@@ -1,12 +1,28 @@
+import { authenticateAdmin, withAdmin } from '@/lib/auth/admin'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { setCyclePrices } from '@/lib/services/cycles'
+import { mutationErrorResponse, requireIdempotencyKey } from '@/lib/services/mutation'
+import { z } from 'zod'
+import { hasOperationalSchema, operationalSchemaGuard } from '@/lib/services/schema-capabilities'
+import { getLegacyPrices } from '@/lib/services/legacy-readers'
 
-export async function GET(
+const priceUpdateSchema = z.object({
+  expectedVersion: z.int().nonnegative(),
+  items: z.array(z.object({
+    productId: z.uuid(),
+    consumerPrice: z.string().regex(/^\d+(?:\.\d{1,2})?$/).refine((value) => Number(value) > 0),
+    traderPrice: z.string().regex(/^\d+(?:\.\d{1,2})?$/).refine((value) => Number(value) > 0),
+  })).min(1),
+})
+
+async function GETImpl(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const { id } = await params
+    if (!await hasOperationalSchema(prisma)) return NextResponse.json(await getLegacyPrices(prisma, id))
     const prices = await prisma.weeklyPrice.findMany({
       where: { cycleId: id },
       include: { product: true },
@@ -31,55 +47,24 @@ export async function GET(
   }
 }
 
-export async function PUT(
+async function PUTImpl(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { id } = await params
-    const body: {
-      items: Array<{
-        productId: string
-        price?: number
-        consumerPrice?: number
-        traderPrice?: number
-      }>
-    } = await request.json()
-
-    if (!body.items || !Array.isArray(body.items)) {
-      return NextResponse.json({ error: 'Data items array is required' }, { status: 400 })
-    }
-
-    const updates = await prisma.$transaction(
-      body.items.map((item) => {
-        const consumer = item.consumerPrice ?? item.price ?? 0
-        const trader = item.traderPrice ?? consumer
-        return prisma.weeklyPrice.upsert({
-          where: {
-            cycleId_productId: {
-              cycleId: id,
-              productId: item.productId,
-            },
-          },
-          update: {
-            price: consumer,
-            consumerPrice: consumer,
-            traderPrice: trader,
-          },
-          create: {
-            cycleId: id,
-            productId: item.productId,
-            price: consumer,
-            consumerPrice: consumer,
-            traderPrice: trader,
-          },
-        })
-      })
-    )
-
-    return NextResponse.json(updates)
+    const auth = await authenticateAdmin(request)
+    if (auth.error) return auth.error
+    const schemaError = await operationalSchemaGuard(prisma)
+    if (schemaError) return schemaError
+    const id = z.uuid().parse((await params).id)
+    const key = requireIdempotencyKey(request.headers.get('Idempotency-Key'))
+    const body = priceUpdateSchema.parse(await request.json())
+    const result = await setCyclePrices(prisma, { actorId: auth.identity.actorId, key, id, ...body })
+    return NextResponse.json(result.body, { status: result.status })
   } catch (error) {
-    console.error('Error updating prices:', error)
-    return NextResponse.json({ error: 'Failed to update prices' }, { status: 500 })
+    return mutationErrorResponse(error)
   }
 }
+
+export const GET = withAdmin(GETImpl)
+export const PUT = PUTImpl

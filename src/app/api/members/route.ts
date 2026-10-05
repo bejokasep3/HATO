@@ -1,6 +1,8 @@
+import { withAdmin } from '@/lib/auth/admin'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
+import { Prisma } from '@prisma/client'
 
 const memberSchema = z.object({
   name: z.string().min(2, 'Nama minimal 2 karakter'),
@@ -11,7 +13,7 @@ const memberSchema = z.object({
   isActive: z.boolean().default(true),
 })
 
-export async function GET(request: NextRequest) {
+async function GETImpl(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const groupId = searchParams.get('groupId')
@@ -19,7 +21,7 @@ export async function GET(request: NextRequest) {
     const search = searchParams.get('search')
     const activeOnly = searchParams.get('active') === 'true'
 
-    const where: any = {}
+    const where: Prisma.MemberWhereInput = {}
     if (activeOnly) where.isActive = true
     if (groupId) where.groupId = groupId
     if (level) where.level = parseInt(level, 10)
@@ -48,7 +50,7 @@ export async function GET(request: NextRequest) {
   }
 }
 
-export async function POST(request: NextRequest) {
+async function POSTImpl(request: NextRequest) {
   try {
     const body = await request.json()
     const validated = memberSchema.parse(body)
@@ -67,7 +69,7 @@ export async function POST(request: NextRequest) {
     }
 
     return NextResponse.json(member, { status: 201 })
-  } catch (error: any) {
+  } catch (error: unknown) {
     if (error instanceof z.ZodError) {
       return NextResponse.json({ error: error.issues }, { status: 400 })
     }
@@ -76,7 +78,7 @@ export async function POST(request: NextRequest) {
   }
 }
 
-export async function PATCH(request: NextRequest) {
+async function PATCHImpl(request: NextRequest) {
   try {
     const body = await request.json()
     const { id, ...data } = body
@@ -108,7 +110,7 @@ export async function PATCH(request: NextRequest) {
   }
 }
 
-export async function DELETE(request: NextRequest) {
+async function DELETEImpl(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const id = searchParams.get('id')
@@ -154,3 +156,8 @@ export async function DELETE(request: NextRequest) {
     return NextResponse.json({ error: 'Failed to delete member' }, { status: 500 })
   }
 }
+
+export const GET = withAdmin(GETImpl)
+export const POST = withAdmin(POSTImpl)
+export const PATCH = withAdmin(PATCHImpl)
+export const DELETE = withAdmin(DELETEImpl)

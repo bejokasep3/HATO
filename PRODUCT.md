@@ -11,7 +11,7 @@ web
 - Secondary: Penanggung Jawab (PJ) Level 2 dan Anggota Level 1 (melalui ringkasan/notifikasi pesan dan mobile companion).
 
 ## Product Purpose
-Sistem Manajemen Distribusi Sembako (HATO / SembakoDistro) mengotomatisasi siklus pemesanan mingguan bahan pokok (ayam, tahu, dan komoditas lainnya), menjamin target kuota minimum supplier Level 4 (20 kg ayam + 20 bungkus tahu) terpenuhi setiap minggu, mempercepat rekapitulasi pesanan dari >1 jam menjadi <15 menit, serta memonitor pembayaran dan pengiriman secara transparan.
+Sistem Manajemen Distribusi Sembako (HATO / SembakoDistro) mengelola siklus pemesanan mingguan bahan pokok (ayam, tahu, dan komoditas lainnya), membantu manajer memenuhi target pembelian minimum supplier yang ditetapkan setiap minggu, mempercepat rekapitulasi pesanan, serta memonitor pembayaran dan pengiriman secara transparan. Target awal saat ini 10 kg ayam dan 10 bungkus tahu, lalu dapat diubah saat membuat siklus.
 
 ## Positioning
 Sistem operasional distribusi komunal terstruktur dengan mekanisme rotasi jadwal anggota yang memastikan kuota pesanan supplier Level 4 terpenuhi setiap minggu tanpa risiko salah rekap manual via chat WhatsApp.
@@ -40,7 +40,7 @@ Sistem operasional distribusi komunal terstruktur dengan mekanisme rotasi jadwal
 
 ## Product Principles
 - Nol Selisih Rekapitulasi: Seluruh kalkulasi jumlah pesanan dan total harga dihitung secara otomatis dan konsisten.
-- Visibilitas Kuota Target: Kemajuan pencapaian kuota minimum (20 kg ayam & 20 bungkus tahu) terpampang jelas dan langsung di dashboard siklus.
+- Visibilitas Kuota Target: Kemajuan terhadap target ayam dan tahu yang tersimpan pada setiap siklus terpampang jelas di dashboard, termasuk permintaan yang melebihi target.
 - Alur Kerja Cepat: Antarmuka intuitif untuk copy format pesan WA, filter status cepat, dan entri pesanan dalam hitungan detik.
 
 ## Accessibility & Inclusion

@@ -35,6 +35,34 @@ import {
 import { formatCurrency, formatDate, getWhatsAppUrl } from '@/lib/utils'
 import { toast } from 'sonner'
 
+type ReportTooltipEntry = {
+  color?: string
+  name?: string
+  value: number | string
+}
+
+type ReportTooltipProps = {
+  active?: boolean
+  payload?: ReportTooltipEntry[]
+  label?: string
+}
+
+function ReportTooltip({ active, payload, label }: ReportTooltipProps) {
+  if (!active || !payload?.length) return null
+
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white p-3 text-xs shadow-md">
+      <p className="mb-1.5 font-bold text-slate-800">{label}</p>
+      {payload.map((entry, index) => (
+        <p key={`item-${index}`} className="flex items-center gap-2 py-0.5 font-medium" style={{ color: entry.color }}>
+          <span>• {entry.name}:</span>
+          <span className="font-bold">{formatCurrency(entry.value)}</span>
+        </p>
+      ))}
+    </div>
+  )
+}
+
 export default function ReportsPage() {
   const [activeTab, setActiveTab] = useState<'targets' | 'financial' | 'commodity' | 'member' | 'receivable'>('targets')
   const [loading, setLoading] = useState(true)
@@ -70,29 +98,11 @@ export default function ReportsPage() {
     fetchReport(activeTab)
   }, [activeTab])
 
-  // Custom Tooltip for Charts
-  const CustomTooltip = ({ active, payload, label }: any) => {
-    if (active && payload && payload.length) {
-      return (
-        <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-md text-xs">
-          <p className="font-bold text-slate-800 mb-1.5">{label}</p>
-          {payload.map((entry: any, index: number) => (
-            <p key={`item-${index}`} className="flex items-center gap-2 py-0.5 font-medium" style={{ color: entry.color }}>
-              <span>• {entry.name}:</span>
-              <span className="font-bold">{formatCurrency(entry.value)}</span>
-            </p>
-          ))}
-        </div>
-      )
-    }
-    return null
-  }
-
   // Export CSV based on active tab
   const handleExportCSV = () => {
     let headers: string[] = []
     let rows: any[][] = []
-    let filename = `Laporan_${activeTab}.csv`
+    const filename = `Laporan_${activeTab}.csv`
 
     if (activeTab === 'targets' && targetData) {
       headers = [
@@ -371,7 +381,7 @@ export default function ReportsPage() {
           {/* TAB 0: TARGET & SISA STOK (AYAM & TAHU) */}
           {activeTab === 'targets' && targetData && (
             <div className="space-y-5">
-              {/* Summary Cards — 4 Clean Balanced Cards */}
+              {/* Ringkasan empat metrik laporan */}
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 {/* Target Ayam Campur */}
                 <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs">
@@ -671,7 +681,7 @@ export default function ReportsPage() {
           {activeTab === 'financial' && financialData && (
             <div className="space-y-6">
               {/* Summary Cards */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3.5">
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,200px),1fr))] gap-3.5">
                 <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs">
                   <span className="text-xs font-semibold text-slate-500 block">Total Omzet</span>
                   <span className="text-lg sm:text-xl font-black text-slate-900 mt-1.5 block">
@@ -745,7 +755,7 @@ export default function ReportsPage() {
                       <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                       <XAxis dataKey="shortLabel" tick={{ fontSize: 11 }} />
                       <YAxis tickFormatter={(val) => `Rp ${(val / 1000).toLocaleString('id-ID')}k`} tick={{ fontSize: 11 }} />
-                      <Tooltip content={<CustomTooltip />} />
+                      <Tooltip content={<ReportTooltip />} />
                       <Legend wrapperStyle={{ fontSize: 12, paddingTop: 10 }} />
                       <Bar dataKey="Pendapatan" fill="#059669" radius={[4, 4, 0, 0]} />
                       <Bar dataKey="Modal" fill="#94a3b8" radius={[4, 4, 0, 0]} />

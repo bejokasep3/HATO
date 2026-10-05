@@ -1,4 +1,4 @@
-# HATO Manajer — Aplikasi Mobile (Expo / iOS)
+# HATO Manajer | Aplikasi Mobile (Expo / iOS)
 
 Aplikasi mobile HATO Manajer dibangun menggunakan **Expo React Native** dan dirancang untuk dapat dijalankan langsung di **iPhone tanpa memerlukan akun Apple Developer / sertifikat publishing**, menggunakan aplikasi **Expo Go**.
 

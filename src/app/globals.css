@@ -12,13 +12,6 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
 body {
   background: var(--background);
   color: var(--foreground);
@@ -65,4 +58,19 @@ input, textarea, select {
 /* Tabular numbers for financial and quota values */
 .tabular-nums {
   font-variant-numeric: tabular-nums;
+}
+
+.hato-form input:not([type="checkbox"]):not([type="radio"]),
+.hato-form select,
+.hato-form button,
+.hato-controls input:not([type="checkbox"]):not([type="radio"]),
+.hato-controls select,
+.hato-controls button {
+  min-height: 44px;
+}
+
+.hato-form :disabled,
+.hato-controls :disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
 }

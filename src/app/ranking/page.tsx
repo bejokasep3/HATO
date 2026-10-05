@@ -115,7 +115,7 @@ export default function RankingPage() {
             <Trophy className="w-5 h-5 text-amber-500" />
             <h2 className="font-bold text-slate-900 text-base">Podium Keaktifan Teratas</h2>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,260px),1fr))] gap-4">
             {topPodium.map((m: any, idx: number) => (
               <div
                 key={m.id}
@@ -162,7 +162,7 @@ export default function RankingPage() {
                   </div>
                 </div>
 
-                <div className="mt-4 pt-3 border-t border-slate-200/60 flex items-center justify-between text-xs text-slate-600">
+                <div className="mt-4 pt-3 border-t border-slate-200/60 flex flex-wrap items-center justify-between gap-3 text-xs text-slate-600">
                   <div className="flex items-center gap-2">
                     <span>{m.orderCount} pesanan</span>
                     {m.paymentRate === 100 ? (

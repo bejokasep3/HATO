@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 })
 
 export const metadata: Metadata = {
-  title: 'HATO Manajer — Sistem Manajemen Distribusi Sembako',
+  title: 'HATO Manajer | Sistem Manajemen Distribusi Sembako',
   description: 'Aplikasi manajemen siklus distribusi sembako, rotasi anggota, rekap supplier, dan pembayaran.',
 }
 

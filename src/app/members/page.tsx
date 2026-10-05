@@ -7,7 +7,6 @@ import {
   Plus,
   Search,
   MessageSquare,
-  X,
   Phone,
   Building2,
   ShieldCheck,
@@ -19,6 +18,8 @@ import { getWhatsAppUrl } from '@/lib/utils'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
+import { Modal } from '@/components/ui/Modal'
+import { useOperationalMode } from '@/components/AppShell'
 
 interface MemberItem {
   id: string
@@ -59,6 +60,8 @@ interface GroupItem {
 }
 
 export default function CommunityPage() {
+  const { operationalSchema } = useOperationalMode()
+  const canMutate = operationalSchema === true
   const router = useRouter()
   const [activeTab, setActiveTab] = useState<'members' | 'groups'>('members')
   const [loading, setLoading] = useState(true)
@@ -171,6 +174,7 @@ export default function CommunityPage() {
 
   const handleSaveMember = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (!canMutate) return
     try {
       setMemberSubmitting(true)
       const payload = {
@@ -222,6 +226,7 @@ export default function CommunityPage() {
   }
 
   const handleToggleActive = async (id: string, currentActive: boolean) => {
+    if (!canMutate) return
     try {
       const res = await fetch('/api/members', {
         method: 'PATCH',
@@ -245,6 +250,7 @@ export default function CommunityPage() {
   }
 
   const handleDeleteMember = async (m: MemberItem) => {
+    if (!canMutate) return
     const isUsed = (m._count?.orders || 0) > 0
     const confirmMessage = isUsed
       ? `Anggota "${m.name}" sudah memiliki riwayat transaksi pesanan. Menghapus akan menonaktifkannya dari siklus mendatang. Lanjutkan?`
@@ -283,6 +289,7 @@ export default function CommunityPage() {
 
   const handleSaveGroup = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (!canMutate) return
     try {
       setGroupSubmitting(true)
       if (editingGroup) {
@@ -332,6 +339,7 @@ export default function CommunityPage() {
   }
 
   const handleDeleteGroup = async (g: GroupItem) => {
+    if (!canMutate) return
     const memberCount = g._count?.members || 0
     if (memberCount > 0) {
       toast.error(`Tidak dapat menghapus "${g.name}" karena masih ada ${memberCount} anggota di dalamnya.`)
@@ -390,6 +398,7 @@ export default function CommunityPage() {
             <Button
               variant="primary"
               onClick={handleOpenCreateMemberModal}
+              disabled={!canMutate}
               icon={<Plus className="w-4 h-4" />}
             >
               Tambah Anggota Baru
@@ -398,6 +407,7 @@ export default function CommunityPage() {
             <Button
               variant="primary"
               onClick={handleOpenCreateGroupModal}
+              disabled={!canMutate}
               icon={<Plus className="w-4 h-4" />}
             >
               Tambah Sub-Grup Baru
@@ -484,7 +494,11 @@ export default function CommunityPage() {
                 Tidak ada data anggota ditemukan.
               </div>
             ) : (
-              <div className="overflow-x-auto">
+              <>
+              <div className="divide-y divide-slate-200 md:hidden">
+                {filteredMembers.map((member) => <article key={member.id} className="p-4"><div className="flex flex-wrap items-center justify-between gap-2"><button type="button" onClick={() => handleOpenEditMemberModal(member)} className="text-left text-sm font-bold text-slate-950">{member.name}</button><button type="button" disabled={!canMutate} onClick={() => void handleToggleActive(member.id, member.isActive)} className="rounded-lg border border-slate-200 px-3 text-xs font-semibold text-slate-700">{member.isActive ? 'Aktif' : 'Nonaktif'}</button></div><p className="mt-1 text-xs text-slate-500">{member.group?.name ?? 'Tanpa sub-grup'}</p><dl className="mt-3 flex flex-wrap gap-x-6 gap-y-3 text-sm"><div><dt className="text-xs text-slate-500">Peran</dt><dd className="mt-1 font-semibold">{member.role === 'pj' ? 'PJ Sub-Grup (L2)' : member.role === 'pengurus' ? 'Pengurus (L3)' : 'Anggota (L1)'}</dd></div><div><dt className="text-xs text-slate-500">Total pesanan</dt><dd className="mt-1 font-semibold tabular-nums">{member._count?.orders ?? 0} kali</dd></div></dl><a href={getWhatsAppUrl(member.phone, `Halo ${member.name}:`)} target="_blank" rel="noopener noreferrer" className="mt-3 inline-flex min-h-11 items-center gap-2 text-sm font-semibold text-emerald-800"><MessageSquare className="h-4 w-4" />{member.phone}</a></article>)}
+              </div>
+              <div className="hidden md:block overflow-x-auto">
                 <table className="w-full text-left text-sm">
                   <thead className="bg-slate-50 text-slate-500 text-xs uppercase font-semibold border-b border-slate-100">
                     <tr>
@@ -509,7 +523,7 @@ export default function CommunityPage() {
                             <div className="w-7 h-7 rounded-full bg-slate-100 border border-slate-200/80 flex items-center justify-center font-bold text-[11px] text-slate-700 shrink-0">
                               {m.name.charAt(0).toUpperCase()}
                             </div>
-                            <span className="hover:text-emerald-700 transition-colors">{m.name}</span>
+                            <button type="button" onClick={(event) => { event.stopPropagation(); handleOpenEditMemberModal(m) }} className="min-h-11 text-left hover:text-emerald-700 transition-colors">{m.name}</button>
                           </div>
                         </td>
                         <td className="py-3.5 px-4 text-xs text-slate-600">{m.group?.name || '-'}</td>
@@ -532,6 +546,7 @@ export default function CommunityPage() {
                         </td>
                         <td className="py-3.5 px-4 text-center">
                           <button
+                            disabled={!canMutate}
                             onClick={(e) => {
                               e.stopPropagation()
                               handleToggleActive(m.id, m.isActive)
@@ -562,6 +577,7 @@ export default function CommunityPage() {
                   </tbody>
                 </table>
               </div>
+              </>
             )}
           </div>
         </div>
@@ -571,13 +587,13 @@ export default function CommunityPage() {
       {activeTab === 'groups' && (
         <div className="space-y-6">
           {rootGroup && (
-            <div className="bg-emerald-900 border border-emerald-800 text-white p-5 rounded-2xl flex items-center justify-between shadow-xs">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-emerald-800 flex items-center justify-center text-white border border-emerald-700/60">
+            <div className="bg-emerald-900 border border-emerald-800 text-white p-5 rounded-2xl flex flex-wrap items-center justify-between gap-4 shadow-xs">
+              <div className="flex min-w-0 items-center gap-3">
+                <div className="w-10 h-10 shrink-0 rounded-xl bg-emerald-800 flex items-center justify-center text-white border border-emerald-700/60">
                   <Building2 className="w-5 h-5" />
                 </div>
                 <div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <h2 className="text-lg font-extrabold text-white tracking-tight">{rootGroup.name}</h2>
                     <span className="text-[11px] font-semibold text-emerald-200 bg-emerald-800/80 px-2 py-0.5 rounded border border-emerald-700/50">
                       Grup Manajer (L3)
@@ -602,11 +618,15 @@ export default function CommunityPage() {
                 <div
                   key={g.id}
                   onClick={() => handleOpenEditGroupModal(g)}
+                  role="button"
+                  tabIndex={0}
+                  aria-label={`Lihat rincian ${g.name}`}
+                  onKeyDown={(event) => { if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); handleOpenEditGroupModal(g) } }}
                   className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs flex flex-col justify-between hover:border-emerald-400 hover:shadow-md transition-all cursor-pointer group"
                   title="Klik untuk melihat detail / mengedit sub-grup & PJ"
                 >
                   <div>
-                    <div className="flex items-start justify-between mb-3">
+                    <div className="flex flex-wrap items-start justify-between gap-2 mb-3">
                       <div className="flex items-center gap-2.5">
                         <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-700 flex items-center justify-center font-bold text-xs group-hover:bg-emerald-600 group-hover:text-white transition-colors">
                           L2
@@ -666,22 +686,9 @@ export default function CommunityPage() {
       )}
 
       {/* CREATE / EDIT MEMBER MODAL */}
-      {memberModalOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl relative animate-in fade-in zoom-in-95 duration-150">
-            <div className="flex items-center justify-between pb-4 border-b border-slate-100">
-              <h2 className="text-lg font-bold text-slate-900">
-                {editingMember ? 'Edit Data Anggota' : 'Tambah Anggota Baru'}
-              </h2>
-              <button
-                onClick={() => setMemberModalOpen(false)}
-                className="p-1 rounded-md text-slate-400 hover:text-slate-600 cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <form onSubmit={handleSaveMember} className="space-y-4 pt-4">
+      <Modal isOpen={memberModalOpen} onClose={() => setMemberModalOpen(false)} title={!canMutate ? 'Rincian anggota' : editingMember ? 'Edit Data Anggota' : 'Tambah Anggota Baru'} maxWidth="md" description={!canMutate ? 'Mode baca-saja. Perubahan anggota dinonaktifkan.' : undefined}>
+            <form onSubmit={handleSaveMember} className="hato-form space-y-4 pt-4">
+              <fieldset disabled={!canMutate || memberSubmitting} className="min-w-0 space-y-4">
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">
                   Nama Lengkap
@@ -759,11 +766,13 @@ export default function CommunityPage() {
                 </div>
               </div>
 
-              <div className="flex items-center justify-between pt-4 border-t border-slate-100">
+              </fieldset>
+              <div className="flex flex-wrap gap-3 items-center justify-between pt-4 border-t border-slate-100">
                 {editingMember ? (
                   <button
                     type="button"
                     onClick={() => handleDeleteMember(editingMember)}
+                    disabled={!canMutate || memberSubmitting}
                     className="inline-flex items-center gap-1.5 text-xs font-semibold text-rose-600 hover:text-rose-700 px-2 py-1.5 rounded-md hover:bg-rose-50 transition-colors cursor-pointer"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
@@ -783,7 +792,7 @@ export default function CommunityPage() {
                   </button>
                   <button
                     type="submit"
-                    disabled={memberSubmitting}
+                    disabled={!canMutate || memberSubmitting}
                     className="px-4 py-2 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg transition-colors shadow-xs cursor-pointer disabled:opacity-50"
                   >
                     {memberSubmitting
@@ -795,27 +804,12 @@ export default function CommunityPage() {
                 </div>
               </div>
             </form>
-          </div>
-        </div>
-      )}
+      </Modal>
 
       {/* CREATE / EDIT SUB-GROUP MODAL */}
-      {groupModalOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl relative animate-in fade-in zoom-in-95 duration-150">
-            <div className="flex items-center justify-between pb-4 border-b border-slate-100">
-              <h2 className="text-lg font-bold text-slate-900">
-                {editingGroup ? `Detail & Edit ${editingGroup.name}` : 'Tambah Sub-Grup Baru'}
-              </h2>
-              <button
-                onClick={() => setGroupModalOpen(false)}
-                className="p-1 rounded-md text-slate-400 hover:text-slate-600 cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <form onSubmit={handleSaveGroup} className="space-y-4 pt-4">
+      <Modal isOpen={groupModalOpen} onClose={() => setGroupModalOpen(false)} title={editingGroup ? `Rincian ${editingGroup.name}` : 'Tambah Sub-Grup Baru'} maxWidth="md" description={!canMutate ? 'Mode baca-saja. Perubahan sub-grup dinonaktifkan.' : undefined}>
+            <form onSubmit={handleSaveGroup} className="hato-form space-y-4 pt-4">
+              <fieldset disabled={!canMutate || groupSubmitting} className="min-w-0 space-y-4">
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">
                   Nama Sub-Grup
@@ -885,11 +879,13 @@ export default function CommunityPage() {
                 </div>
               )}
 
-              <div className="flex items-center justify-between pt-4 border-t border-slate-100">
+              </fieldset>
+              <div className="flex flex-wrap gap-3 items-center justify-between pt-4 border-t border-slate-100">
                 {editingGroup ? (
                   <button
                     type="button"
                     onClick={() => handleDeleteGroup(editingGroup)}
+                    disabled={!canMutate || groupSubmitting}
                     className="inline-flex items-center gap-1.5 text-xs font-semibold text-rose-600 hover:text-rose-700 px-2 py-1.5 rounded-md hover:bg-rose-50 transition-colors cursor-pointer"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
@@ -909,7 +905,7 @@ export default function CommunityPage() {
                   </button>
                   <button
                     type="submit"
-                    disabled={groupSubmitting}
+                    disabled={!canMutate || groupSubmitting}
                     className="px-4 py-2 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg transition-colors shadow-xs cursor-pointer disabled:opacity-50"
                   >
                     {groupSubmitting
@@ -921,9 +917,7 @@ export default function CommunityPage() {
                 </div>
               </div>
             </form>
-          </div>
-        </div>
-      )}
+      </Modal>
     </div>
   )
 }

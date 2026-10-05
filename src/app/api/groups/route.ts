@@ -1,3 +1,4 @@
+import { withAdmin } from '@/lib/auth/admin'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
@@ -10,7 +11,7 @@ const groupSchema = z.object({
   isActive: z.boolean().default(true),
 })
 
-export async function GET() {
+async function GETImpl() {
   try {
     const groups = await prisma.group.findMany({
       include: {
@@ -34,7 +35,7 @@ export async function GET() {
   }
 }
 
-export async function POST(request: NextRequest) {
+async function POSTImpl(request: NextRequest) {
   try {
     const body = await request.json()
     const validated = groupSchema.parse(body)
@@ -52,7 +53,7 @@ export async function POST(request: NextRequest) {
     }
 
     return NextResponse.json(group, { status: 201 })
-  } catch (error: any) {
+  } catch (error: unknown) {
     if (error instanceof z.ZodError) {
       return NextResponse.json({ error: error.issues }, { status: 400 })
     }
@@ -61,7 +62,7 @@ export async function POST(request: NextRequest) {
   }
 }
 
-export async function PATCH(request: NextRequest) {
+async function PATCHImpl(request: NextRequest) {
   try {
     const body = await request.json()
     const { id, name, pjMemberId, isActive } = body
@@ -70,7 +71,7 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: 'Group ID is required' }, { status: 400 })
     }
 
-    const updateData: any = {}
+    const updateData: { name?: string; pjMemberId?: string | null; isActive?: boolean } = {}
     if (name !== undefined) updateData.name = name
     if (pjMemberId !== undefined) updateData.pjMemberId = pjMemberId || null
     if (isActive !== undefined) updateData.isActive = isActive
@@ -96,7 +97,7 @@ export async function PATCH(request: NextRequest) {
   }
 }
 
-export async function DELETE(request: NextRequest) {
+async function DELETEImpl(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const id = searchParams.get('id')
@@ -129,3 +130,8 @@ export async function DELETE(request: NextRequest) {
     return NextResponse.json({ error: 'Failed to delete group' }, { status: 500 })
   }
 }
+
+export const GET = withAdmin(GETImpl)
+export const POST = withAdmin(POSTImpl)
+export const PATCH = withAdmin(PATCHImpl)
+export const DELETE = withAdmin(DELETEImpl)

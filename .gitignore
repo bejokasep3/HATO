@@ -25,6 +25,8 @@
 .DS_Store
 *.pem
 *.exe
+/CPM-2027-Kalender-Design.pdf
+/CPM-kalender-2027-konsep-01.pdf
 
 # debug
 npm-debug.log*

@@ -1,7 +1,9 @@
-import { Tabs } from 'expo-router';
+import { Tabs, useRouter } from 'expo-router';
 import { SymbolView } from 'expo-symbols';
+import { Pressable } from 'react-native';
 
 export default function TabLayout() {
+  const router = useRouter();
   return (
     <Tabs
       screenOptions={{
@@ -14,11 +16,16 @@ export default function TabLayout() {
         headerTitleStyle: {
           fontWeight: 'bold',
         },
+        headerRight: () => (
+          <Pressable accessibilityRole="button" accessibilityLabel="Buka menu lainnya" onPress={() => router.push('/more')} style={{ minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center', marginRight: 6 }}>
+            <SymbolView name="ellipsis.circle" size={23} tintColor="#ffffff" fallback={<></>} />
+          </Pressable>
+        ),
       }}>
       <Tabs.Screen
         name="index"
         options={{
-          title: 'Dashboard',
+          title: 'Minggu Ini',
           tabBarIcon: ({ color }) => (
             <SymbolView name="house.fill" tintColor={color} fallback={<></>} />
           ),
@@ -27,10 +34,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="cycles"
         options={{
-          title: 'Siklus',
-          tabBarIcon: ({ color }) => (
-            <SymbolView name="calendar" tintColor={color} fallback={<></>} />
-          ),
+          href: null,
         }}
       />
       <Tabs.Screen
@@ -43,14 +47,24 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
-        name="more"
+        name="inventory"
         options={{
-          title: 'Lainnya',
+          title: 'Barang',
           tabBarIcon: ({ color }) => (
-            <SymbolView name="ellipsis.circle.fill" tintColor={color} fallback={<></>} />
+            <SymbolView name="shippingbox.fill" tintColor={color} fallback={<></>} />
           ),
         }}
       />
+      <Tabs.Screen
+        name="payments"
+        options={{
+          title: 'Pembayaran',
+          tabBarIcon: ({ color }) => (
+            <SymbolView name="creditcard.fill" tintColor={color} fallback={<></>} />
+          ),
+        }}
+      />
+      <Tabs.Screen name="more" options={{ href: null }} />
     </Tabs>
   );
 }

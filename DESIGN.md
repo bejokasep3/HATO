@@ -80,7 +80,7 @@ HATO Manajer is an operational management interface built for community food sta
 
 **Key Characteristics:**
 - High-density operational data tables with responsive cards on mobile viewports.
-- Real-time visual progress trackers for mandatory supplier quota minimums (20 kg chicken / 20 packs tofu).
+- Visual progress trackers for editable weekly supplier targets. Current form defaults are 10 kg chicken and 10 packs tofu; values are confirmed for each cycle.
 - Direct WhatsApp shareable action blocks with pre-formatted copy.
 - Zero visual fluff: every badge, progress meter, and card communicates actionable cycle status.
 
@@ -120,7 +120,7 @@ Typography is powered by Geist Sans, optimized for high legibility in dense tabu
 - Container cards use consistent ounded-xl (12px) with order border-slate-200.
 
 ## Components
-- **Cycle Quota Bar:** Progress gauge depicting current aggregated orders against weekly quotas (e.g., 20 kg / 20 pk).
+  - **Cycle Quota Bar:** Progress gauge depicting current aggregated orders against that cycle's confirmed targets. Show values above 100% when demand exceeds the target.
 - **Status Badges:** Color-coded pill badges for cycle phases (DRAFT, OPEN, SUBMITTED, DELIVERED, COMPLETED).
 - **Quick-Action WhatsApp Buttons:** Direct action buttons that copy or launch formatted summaries ready for messaging Penanggung Jawab (PJ) or members.
 - **Order Line Item Editor:** Fast multi-item entry row with quantity, consumer vs trader price toggle, and instant subtotal recalculation.

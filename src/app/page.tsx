@@ -1,680 +1,312 @@
-﻿'use client'
+'use client'
 
-import React, { useEffect, useState } from 'react'
+import { Suspense, useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
+import { useRouter, useSearchParams } from 'next/navigation'
 import {
-  Calendar,
-  Clock,
-  CheckCircle2,
-  AlertCircle,
-  TrendingUp,
-  CreditCard,
-  Users,
-  ShoppingCart,
-  ArrowRight,
-  MessageSquare,
-  Plus,
-  Package,
-  ChevronLeft,
-  ChevronRight,
-  ChevronDown,
+  AlertTriangle, ArrowRight, CalendarDays, CheckCircle2, CircleDollarSign,
+  ClipboardList, Clock3, PackageCheck, Plus, RefreshCw, ShoppingBasket, Users,
 } from 'lucide-react'
-import { formatCurrency, formatDate, getWhatsAppUrl } from '@/lib/utils'
-import { Button } from '@/components/ui/Button'
+import { apiGet } from '@/lib/api-client'
+import { formatCurrency, formatDate } from '@/lib/utils'
 import { Badge } from '@/components/ui/Badge'
+import { Button } from '@/components/ui/Button'
+import { useOperationalMode } from '@/components/AppShell'
 
-interface DashboardData {
-  hasCycle: boolean
-  allCycles?: Array<{
-    id: string
-    label: string
-    status: string
-    periodStart: string
-    orderDeadline: string
-    deliveryDate: string
-  }>
-  message?: string
-  currentCycle?: {
-    id: string
-    label: string
-    periodStart: string
-    orderDeadline: string
-    deliveryDate: string
-    status: string
-    notes?: string
+type CycleSummary = {
+  id: string
+  label: string
+  periodStart: string
+  periodEnd: string | null
+  supplierDeadline: string | null
+  deliveryDate: string
+  periodState: 'draft' | 'open' | 'closed' | null
+  status: string
+  version?: number
+  rulesVersion: number
+  recapConfirmedAt?: string | null
+  receiptStatus?: string
+}
+
+type TargetSummary = {
+  groupCode: 'AYAM' | 'TAHU'
+  unit: string
+  target: string | null
+  demand: string | null
+  status: 'known' | 'unknown'
+  progress: null | {
+    percentage: number | null
+    shortfall: string
+    excess: string
+    plannedPurchase: string
   }
-  targets?: Array<{
-    id: string
-    name: string
-    unit: string
-    targetQuantity: number
-    actualQuantity: number
-    percentage: number
-    isMet: boolean
-    beginningStock?: number
-    goodsIn?: number
-    unsoldStock?: number
-    breakdown?: Array<{
-      name: string
-      quantity: number
-    }>
-  }>
-  rotation?: {
+}
+
+type DashboardData = {
+  variants?: Array<{ productId: string; productName: string; unit: string; groupCode: string; demand: string }>
+  variantsUnavailable?: boolean
+  hasCycle: boolean
+  allCycles: CycleSummary[]
+  currentCycle: CycleSummary | null
+  targets: TargetSummary[]
+  rotation: null | {
     scheduledCount: number
     orderedCount: number
-    percentage: number
-    pendingMembers: Array<{
-      id: string
-      name: string
-      phone: string
-      groupName: string
-    }>
-    members?: Array<{
-      id: string
-      scheduleId: string
-      name: string
-      phone: string
-      groupName: string
-      role: string
-      status: string
-      isOrdered: boolean
-    }>
+    pendingMembers: Array<{ id: string; name: string; groupName: string; role: string; isOrdered: boolean }>
+    members: Array<{ id: string; name: string; groupName: string; role: string; isOrdered: boolean }>
   }
-  payments?: {
-    totalOrders: number
-    totalBilling: number
-    paidAmount: number
-    unpaidAmount: number
-    paidCount: number
-    unpaidCount: number
+  finances: null | {
+    orderCount: number
+    orderValue: string
+    receivedPayments: string
+    knownOutstanding: string
+    unknownBalanceCount: number
+    totalIncomplete: boolean
+    purchaseValue: string | null
   }
-  recentOrders?: Array<{
+  recentOrders: Array<{
     id: string
     memberName: string
     groupName: string
-    totalAmount: number
-    paymentStatus: string
+    totalAmount: string
+    paymentSummary: { status: string; paidAmount: string | null; outstandingAmount: string | null }
     orderStatus: string
     createdAt: string
     itemCount: number
   }>
-  totalMembers?: number
+  totalMembers: number
 }
 
-export default function DashboardPage() {
+function withCycle(path: string, cycleId: string) {
+  return `${path}${path.includes('?') ? '&' : '?'}cycleId=${encodeURIComponent(cycleId)}`
+}
+
+function phaseLabel(state: CycleSummary['periodState']) {
+  if (state === 'draft') return 'Draf'
+  if (state === 'open') return 'Dibuka'
+  if (state === 'closed') return 'Ditutup'
+  return 'Perlu verifikasi'
+}
+
+function nextAction(cycle: CycleSummary) {
+  if (cycle.periodState === 'closed') {
+    return { title: 'Ringkasan minggu yang ditutup', detail: 'Lihat pesanan historis dan rincian tagihan pada minggu ini.', href: '/payments', label: 'Periksa piutang', icon: CircleDollarSign }
+  }
+  if (cycle.periodState === 'draft') {
+    return { title: 'Siapkan minggu ini', detail: 'Periksa target dan harga, lalu buka siklus untuk menerima pesanan.', href: `/cycles/${cycle.id}`, label: 'Buka pengaturan', icon: ClipboardList }
+  }
+  if (!cycle.recapConfirmedAt) {
+    return { title: 'Pesanan dan rekap supplier', detail: 'Input pesanan yang masuk. Pada Selasa, periksa pembagian tiap varian lalu konfirmasi rekap.', href: `/cycles/${cycle.id}`, label: 'Periksa rekap', icon: ShoppingBasket }
+  }
+  if (cycle.receiptStatus !== 'confirmed') {
+    return { title: 'Catat barang datang', detail: 'Rekap sudah terkunci. Pada Kamis, catat jumlah diterima, rusak, dan harga beli.', href: '/inventory', label: 'Buka penerimaan', icon: PackageCheck }
+  }
+  return { title: 'Distribusi dan pembayaran', detail: 'Barang sudah diterima. Pantau pengiriman dan cicilan yang masih berjalan.', href: '/orders', label: 'Lihat pesanan', icon: CircleDollarSign }
+}
+
+function TargetPanel({ target, variants }: { target: TargetSummary; variants: NonNullable<DashboardData['variants']> }) {
+  const title = target.groupCode === 'AYAM' ? 'Ayam' : 'Tahu'
+  if (target.status === 'unknown' || !target.progress || target.target === null || target.demand === null) {
+    return (
+      <div className="border-t border-slate-200 p-5 first:border-t-0 @2xl:border-l @2xl:border-t-0 @2xl:first:border-l-0">
+        <div className="flex items-center justify-between gap-3">
+          <div><p className="font-bold text-slate-900">{title}</p><p className="mt-1 text-xs text-slate-500">Target histori belum diverifikasi</p></div>
+          <Badge variant="slate">Belum diketahui</Badge>
+        </div>
+      </div>
+    )
+  }
+
+  const percentage = target.progress.percentage
+  const reached = Number(target.progress.shortfall) === 0
+  const untargeted = percentage === null
+  return (
+    <div className="border-t border-slate-200 p-5 first:border-t-0 @2xl:border-l @2xl:border-t-0 @2xl:first:border-l-0">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="font-bold text-slate-950">{title}</p>
+          <p className="mt-1 text-sm text-slate-600"><span className="text-2xl font-black tabular-nums text-slate-950">{Number(target.demand).toLocaleString('id-ID')}</span><span className="ml-1">dari {Number(target.target).toLocaleString('id-ID')} {target.unit}</span></p>
+        </div>
+        <Badge variant={untargeted ? 'slate' : reached ? 'emerald' : 'amber'}>
+          {untargeted ? 'Tidak ditargetkan' : reached ? (Number(target.progress.excess) > 0 ? `Lebih ${Number(target.progress.excess).toLocaleString('id-ID')} ${target.unit}` : 'Target tercapai') : `Kurang ${Number(target.progress.shortfall).toLocaleString('id-ID')} ${target.unit}`}
+        </Badge>
+      </div>
+      {!untargeted ? (
+        <div className="mt-4">
+          <div className="h-2 overflow-hidden rounded-full bg-slate-200" aria-label={`Kemajuan ${title} ${percentage}%`}>
+            <div className={`h-full rounded-full ${reached ? 'bg-emerald-700' : 'bg-amber-500'}`} style={{ width: `${Math.min(100, percentage)}%` }} />
+          </div>
+          <div className="mt-2 flex items-center justify-between text-xs text-slate-500">
+            <span>Rencana beli minimal {Number(target.progress.plannedPurchase).toLocaleString('id-ID')} {target.unit}</span>
+            <span className="font-bold tabular-nums text-slate-700">{percentage}%</span>
+          </div>
+        </div>
+      ) : null}
+      {variants.length > 0 ? <dl className="mt-4 divide-y divide-slate-100 border-t border-slate-200">{variants.map((variant) => <div key={variant.productId} className="flex flex-wrap justify-between gap-2 py-2 text-sm"><dt className="text-slate-600">{variant.productName}</dt><dd className="font-semibold tabular-nums text-slate-900">{Number(variant.demand).toLocaleString('id-ID')} {variant.unit}</dd></div>)}</dl> : null}
+    </div>
+  )
+}
+
+function DashboardContent() {
+  const { operationalSchema } = useOperationalMode()
+  const router = useRouter()
+  const searchParams = useSearchParams()
+  const requestedCycleId = searchParams.get('cycleId')
   const [data, setData] = useState<DashboardData | null>(null)
   const [loading, setLoading] = useState(true)
-  const [switchingCycle, setSwitchingCycle] = useState(false)
-  const [rotationFilter, setRotationFilter] = useState<'all' | 'pending' | 'ordered'>('all')
+  const [error, setError] = useState('')
 
-  const fetchDashboard = async (cycleId?: string) => {
+  const load = useCallback(async (cycleId?: string | null) => {
+    setError('')
+    setLoading(true)
     try {
-      if (cycleId) {
-        setSwitchingCycle(true)
-      } else {
-        setLoading(true)
+      const query = cycleId ? `?cycleId=${encodeURIComponent(cycleId)}` : ''
+      const result = await apiGet<DashboardData>(`/api/dashboard${query}`)
+      if (result.currentCycle) {
+        try {
+          const recap = await apiGet<{ items: NonNullable<DashboardData['variants']> }>(`/api/cycles/${result.currentCycle.id}/supplier-recap`)
+          result.variants = recap.items
+        } catch { result.variantsUnavailable = true }
       }
-      const url = cycleId ? `/api/dashboard?cycleId=${cycleId}` : '/api/dashboard'
-      const res = await fetch(url)
-      const json = await res.json()
-      setData(json)
-    } catch (err) {
-      console.error('Failed to load dashboard data:', err)
+      setData(result)
+      if (!cycleId && result.currentCycle) router.replace(`/?cycleId=${encodeURIComponent(result.currentCycle.id)}`, { scroll: false })
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Dashboard gagal dimuat.')
     } finally {
       setLoading(false)
-      setSwitchingCycle(false)
     }
-  }
+  }, [router])
 
   useEffect(() => {
-    fetchDashboard()
-  }, [])
+    const task = window.setTimeout(() => { void load(requestedCycleId) }, 0)
+    return () => window.clearTimeout(task)
+  }, [load, requestedCycleId])
+  const cycle = data?.currentCycle ?? null
+  const action = useMemo(() => cycle ? nextAction(cycle) : null, [cycle])
 
-  if (loading) {
+  if (loading && !data) {
+    return <div className="space-y-4" aria-busy="true" aria-label="Memuat ringkasan minggu"><div className="h-24 animate-pulse rounded-xl bg-slate-200/70" /><div className="h-44 animate-pulse rounded-xl bg-slate-200/60" /><div className="grid gap-4 lg:grid-cols-3"><div className="h-64 animate-pulse rounded-xl bg-slate-200/50 lg:col-span-2" /><div className="h-64 animate-pulse rounded-xl bg-slate-200/50" /></div></div>
+  }
+
+  if (error && !data) {
     return (
-      <div className="flex items-center justify-center min-h-[50vh]">
-        <div className="flex flex-col items-center gap-3">
-          <div className="w-8 h-8 border-3 border-emerald-600 border-t-transparent rounded-full animate-spin" />
-          <p className="text-sm text-slate-500 font-medium">Memuat dashboard operasional...</p>
-        </div>
+      <div className="mx-auto mt-16 max-w-lg rounded-xl border border-rose-200 bg-white p-6 text-center">
+        <AlertTriangle className="mx-auto h-7 w-7 text-rose-700" />
+        <h1 className="mt-3 text-lg font-bold text-slate-950">Ringkasan belum dapat dimuat</h1>
+        <p className="mt-2 text-sm text-slate-600">{error}</p>
+        <Button className="mt-5" onClick={() => void load(requestedCycleId)} icon={<RefreshCw className="h-4 w-4" />}>Coba lagi</Button>
       </div>
     )
   }
 
-  if (!data?.hasCycle || !data.currentCycle) {
+  if (!data?.hasCycle || !cycle || !action) {
     return (
-      <div className="bg-white rounded-2xl border border-slate-200/90 p-8 text-center max-w-xl mx-auto my-12 shadow-xs">
-        <div className="w-12 h-12 bg-amber-50 text-amber-700 rounded-xl flex items-center justify-center mx-auto mb-4 border border-amber-200/60">
-          <Calendar className="w-6 h-6" />
-        </div>
-        <h2 className="text-xl font-extrabold text-slate-900 mb-2 tracking-tight">Belum Ada Siklus Aktif</h2>
-        <p className="text-slate-600 mb-6 text-sm">
-          Mulai dengan membuat siklus pemesanan baru untuk menjadwalkan rotasi anggota dan menentukan harga mingguan.
-        </p>
-        <Link href="/cycles">
-          <Button variant="primary" icon={<Plus className="w-4 h-4" />}>
-            Buat Siklus Baru
-          </Button>
-        </Link>
-      </div>
+      <section className="mx-auto mt-12 max-w-2xl border-y border-slate-200 py-12 text-center">
+        <CalendarDays className="mx-auto h-8 w-8 text-emerald-800" />
+        <h1 className="mt-4 text-2xl font-black tracking-tight text-slate-950">Mulai minggu pertama</h1>
+        <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-600">Buat siklus Senin–Minggu, tentukan target ayam dan tahu, lalu isi harga yang berlaku minggu tersebut.</p>
+        <Link href="/cycles" className="mt-6 inline-flex"><Button size="lg" icon={<Plus className="h-4 w-4" />}>Buat siklus</Button></Link>
+      </section>
     )
   }
 
-  const cycle = data.currentCycle
-  const allCycles = data.allCycles || []
-  const currentCycleIndex = allCycles.findIndex((c) => c.id === cycle.id)
-  const prevCycle =
-    currentCycleIndex !== -1 && currentCycleIndex < allCycles.length - 1
-      ? allCycles[currentCycleIndex + 1]
-      : null
-  const nextCycle = currentCycleIndex > 0 ? allCycles[currentCycleIndex - 1] : null
-
-  const targets = data.targets || []
+  const ActionIcon = action.icon
   const rotation = data.rotation
-  const payments = data.payments
-
-  const scheduledMembers = rotation?.members || []
-  const pendingCount = scheduledMembers.filter((m) => !m.isOrdered).length
-  const orderedCount = scheduledMembers.filter((m) => m.isOrdered).length
-
-  const filteredRotationMembers = scheduledMembers.filter((m) => {
-    if (rotationFilter === 'pending') return !m.isOrdered
-    if (rotationFilter === 'ordered') return m.isOrdered
-    return true
-  })
+  const finances = data.finances
+  const cycleHref = (path: string) => withCycle(path, cycle.id)
 
   return (
-    <div className="space-y-6 max-w-7xl mx-auto">
-      {/* 1. MASTER COMMAND STRIP (Tactile Stepper & Operational Timeline) */}
-      <div className="bg-white border border-slate-200/90 rounded-2xl shadow-xs overflow-hidden">
-        <div className="p-4 sm:p-5 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-          {/* Cycle Picker & Identity */}
-          <div className="flex items-center gap-3 flex-wrap">
-            <div className="inline-flex items-center bg-slate-100/90 rounded-xl p-1 border border-slate-200/80">
-              <button
-                onClick={() => prevCycle && fetchDashboard(prevCycle.id)}
-                disabled={!prevCycle || switchingCycle}
-                title={prevCycle ? `Lihat ${prevCycle.label}` : 'Tidak ada siklus sebelumnya'}
-                className="p-1.5 rounded-lg hover:bg-white hover:text-slate-900 disabled:opacity-30 text-slate-600 transition-all cursor-pointer"
-              >
-                <ChevronLeft className="w-4 h-4" />
-              </button>
-
-              <div className="relative px-3">
-                <select
-                  value={cycle.id}
-                  onChange={(e) => fetchDashboard(e.target.value)}
-                  disabled={switchingCycle}
-                  className="bg-transparent appearance-none font-bold text-slate-900 text-sm pr-6 py-0.5 focus:outline-none cursor-pointer tracking-tight"
-                >
-                  {allCycles.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.label} {c.status === 'open' ? '• Buka' : c.status === 'draft' ? '• Draf' : '• Selesai'}
-                    </option>
-                  ))}
-                </select>
-                <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-1.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-              </div>
-
-              <button
-                onClick={() => nextCycle && fetchDashboard(nextCycle.id)}
-                disabled={!nextCycle || switchingCycle}
-                title={nextCycle ? `Lihat ${nextCycle.label}` : 'Tidak ada siklus berikutnya'}
-                className="p-1.5 rounded-lg hover:bg-white hover:text-slate-900 disabled:opacity-30 text-slate-600 transition-all cursor-pointer"
-              >
-                <ChevronRight className="w-4 h-4" />
-              </button>
-            </div>
-
-            {/* State Pill */}
-            <span
-              className={`inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full font-semibold border ${
-                cycle.status === 'open'
-                  ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                  : cycle.status === 'draft'
-                  ? 'bg-amber-50 text-amber-800 border-amber-200'
-                  : 'bg-slate-100 text-slate-700 border-slate-200'
-              }`}
-            >
-              {cycle.status === 'open' ? (
-                <>
-                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                  Siklus Aktif
-                </>
-              ) : cycle.status === 'draft' ? (
-                'Draf Persiapan'
-              ) : (
-                'Arsip Selesai'
-              )}
-            </span>
-
-            {switchingCycle && (
-              <span className="text-xs text-slate-500 italic animate-pulse">Memuat data siklus...</span>
-            )}
-          </div>
-
-          {/* Fast Actions Deck */}
-          <div className="flex items-center gap-2.5 self-start lg:self-auto">
-            <Link
-              href={`/cycles/${cycle.id}`}
-            >
-              <Button variant="secondary" size="sm" icon={<MessageSquare className="w-3.5 h-3.5 text-emerald-700" />}>
-                Rekap WhatsApp
-              </Button>
-            </Link>
-            <Link
-              href="/orders"
-            >
-              <Button variant="primary" size="sm" icon={<Plus className="w-3.5 h-3.5" />}>
-                Input Pesanan
-              </Button>
-            </Link>
-          </div>
-        </div>
-
-        {/* Milestone Timeline Rail */}
-        <div className="border-t border-slate-100 bg-slate-50/70 px-4 sm:px-5 py-3 grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
-          <div className="flex items-center gap-2.5">
-            <div className="w-6 h-6 rounded-md bg-emerald-100/80 text-emerald-800 flex items-center justify-center font-bold text-[10px] shrink-0">
-              01
-            </div>
-            <div>
-              <span className="text-slate-500 text-[11px] block">Order Dibuka (Sabtu)</span>
-              <span className="font-semibold text-slate-800 tabular-nums">{formatDate(cycle.periodStart)}</span>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2.5">
-            <div className="w-6 h-6 rounded-md bg-amber-100/80 text-amber-800 flex items-center justify-center font-bold text-[10px] shrink-0">
-              02
-            </div>
-            <div>
-              <span className="text-amber-800 font-semibold text-[11px] block">Deadline Rekap Supplier (Selasa)</span>
-              <span className="font-bold text-slate-900 tabular-nums">{formatDate(cycle.orderDeadline)}</span>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2.5">
-            <div className="w-6 h-6 rounded-md bg-sky-100/80 text-sky-800 flex items-center justify-center font-bold text-[10px] shrink-0">
-              03
-            </div>
-            <div>
-              <span className="text-slate-500 text-[11px] block">Distribusi Tiba (Kamis)</span>
-              <span className="font-semibold text-slate-800 tabular-nums">{formatDate(cycle.deliveryDate)}</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* 2. TARGET QUOTA COMMAND COCKPIT (Ayam & Tahu Twin Gauges) */}
-      <div className="bg-white border border-slate-200/90 rounded-2xl p-5 sm:p-6 shadow-xs">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-5 pb-4 border-b border-slate-100">
+    <div className="mx-auto max-w-7xl space-y-6">
+      <header className="rounded-xl border border-slate-200 bg-white">
+        <div className="flex flex-wrap items-center justify-between gap-4 p-5">
           <div>
-            <h2 className="text-base font-extrabold text-slate-900 tracking-tight flex items-center gap-2">
-              <span>Status Kuota Supplier Level 4</span>
-              <span className="text-[11px] font-semibold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200/50">
-                Target Mingguan
-              </span>
-            </h2>
-            <p className="text-xs text-slate-500 mt-0.5">
-              Ambang batas minimum pemesanan grosir: 20 kg Ayam Potong & 20 bungkus Tahu Putih.
-            </p>
+            <div className="flex flex-wrap items-center gap-2">
+              <h1 className="text-xl font-extrabold tracking-tight text-slate-950">{cycle.label}</h1>
+              <Badge variant={cycle.periodState === 'open' ? 'emerald' : cycle.periodState === 'draft' ? 'amber' : 'slate'} dot>{phaseLabel(cycle.periodState)}</Badge>
+            </div>
+            <p className="mt-1 text-xs text-slate-600">{formatDate(cycle.periodStart)} sampai {formatDate(cycle.periodEnd ?? cycle.deliveryDate)}</p>
           </div>
-          <Link
-            href={`/cycles/${cycle.id}`}
-            className="text-xs font-semibold text-emerald-700 hover:text-emerald-800 flex items-center gap-1 self-start sm:self-auto"
-          >
-            Rincian & Rekapitulasi
-            <ArrowRight className="w-3.5 h-3.5" />
-          </Link>
+          <div className="flex w-full flex-col gap-2 @3xl:w-auto @3xl:flex-row @3xl:items-center shrink-0">
+            <label htmlFor="cycle-context" className="sr-only">Pilih minggu kerja</label>
+            <select id="cycle-context" value={cycle.id} onChange={(event) => router.replace(`/?cycleId=${encodeURIComponent(event.target.value)}`)} disabled={loading} className="min-h-11 min-w-0 max-w-full rounded-lg border border-slate-500 bg-slate-50 px-3 text-sm font-semibold text-slate-800 focus:border-emerald-700">
+              {data.allCycles.map((item) => <option key={item.id} value={item.id}>{item.label} · {phaseLabel(item.periodState)}</option>)}
+            </select>
+            <Button disabled={operationalSchema !== true || cycle.periodState !== 'open'} onClick={() => router.push(cycleHref('/orders?new=1'))} className="w-full @3xl:w-auto whitespace-nowrap" icon={<Plus className="h-4 w-4" />}>Input pesanan</Button>
+          </div>
         </div>
+        <dl className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,180px),1fr))] gap-4 rounded-b-xl border-t border-slate-200 bg-slate-50 px-5 py-4">{[{ label: 'Awal minggu', date: cycle.periodStart }, { label: 'Rekap supplier', date: cycle.supplierDeadline }, { label: 'Barang tiba', date: cycle.deliveryDate }].map((stage) => <div key={stage.label}><dt className="text-xs font-semibold text-slate-500">{stage.label}</dt><dd className="mt-1 text-sm font-bold text-slate-900">{stage.date ? formatDate(stage.date, { weekday: 'long', day: 'numeric', month: 'short' }) : 'Belum ditetapkan'}</dd></div>)}</dl>
+        {error ? <p className="px-5 py-3 text-sm font-medium text-rose-700" role="alert">Data lama masih ditampilkan. {error}</p> : null}
+      </header>
 
-        {/* Twin Gauges Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {targets.map((target) => {
-            const remaining = Math.max(0, target.targetQuantity - target.actualQuantity)
-            const isMet = target.isMet
-            return (
-              <div
-                key={target.id}
-                className="p-4 sm:p-5 rounded-xl bg-slate-50/60 border border-slate-200/80 flex flex-col justify-between"
-              >
-                <div>
-                  {/* Top line: Name & Status */}
-                  <div className="flex items-center justify-between gap-2 mb-3">
-                    <h3 className="font-extrabold text-slate-900 text-base tracking-tight">
-                      {target.name}
-                    </h3>
-                    {isMet ? (
-                      <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-800 bg-emerald-100/80 px-2.5 py-0.5 rounded-full border border-emerald-200">
-                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-700" />
-                        Kuota Terpenuhi
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center gap-1 text-xs font-bold text-amber-800 bg-amber-100/80 px-2.5 py-0.5 rounded-full border border-amber-200">
-                        <AlertCircle className="w-3.5 h-3.5 text-amber-700" />
-                        Kurang <span className="tabular-nums">{remaining}</span> {target.unit}
-                      </span>
-                    )}
-                  </div>
-
-                  {/* Big Number Readout */}
-                  <div className="flex items-baseline justify-between mb-2">
-                    <div className="text-3xl font-black text-slate-900 tracking-tight tabular-nums">
-                      {target.actualQuantity}
-                      <span className="text-sm font-semibold text-slate-500 ml-1.5">
-                        / {target.targetQuantity} {target.unit}
-                      </span>
-                    </div>
-                    <div className="text-right">
-                      <span className={`text-base font-extrabold tabular-nums ${isMet ? 'text-emerald-700' : 'text-amber-700'}`}>
-                        {target.percentage}%
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Tactile Gauge Bar */}
-                  <div className="w-full h-3 bg-slate-200/80 rounded-full overflow-hidden p-0.5">
-                    <div
-                      className={`h-full rounded-full transition-all duration-500 ${
-                        isMet ? 'bg-emerald-600' : 'bg-amber-500'
-                      }`}
-                      style={{ width: `${Math.min(100, target.percentage)}%` }}
-                    />
-                  </div>
-
-                  {/* Variant breakdown tags */}
-                  {target.breakdown && target.breakdown.length > 0 && (
-                    <div className="mt-3 flex flex-wrap items-center gap-1.5">
-                      {target.breakdown.map((b: any) => (
-                        <span
-                          key={b.name}
-                          className="text-[11px] font-medium bg-white text-slate-700 border border-slate-200/80 px-2 py-0.5 rounded-md tabular-nums"
-                        >
-                          {b.name}: <strong className="font-bold text-slate-900">{b.quantity} {target.unit}</strong>
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                {/* Footer notes */}
-                <div className="mt-4 pt-3 border-t border-slate-200/60 flex items-center justify-between text-xs text-slate-500">
-                  <span>
-                    Stok awal: <strong className="text-slate-700 tabular-nums">{target.beginningStock || 0} {target.unit}</strong>
-                  </span>
-                  <span className={(target.unsoldStock ?? 0) > 0 ? 'text-amber-700 font-semibold' : 'text-slate-600'}>
-                    Sisa belum terjual: <strong className="tabular-nums">{target.unsoldStock ?? 0} {target.unit}</strong>
-                  </span>
-                </div>
-              </div>
-            )
-          })}
+      <section className="overflow-hidden rounded-xl border border-slate-200 bg-white" aria-labelledby="target-heading">
+        <div className="border-b border-slate-200 p-5 sm:col-span-2 sm:flex sm:items-center sm:justify-between">
+          <div><h2 id="target-heading" className="text-lg font-extrabold text-slate-950">Target dan permintaan</h2><p className="mt-1 text-sm text-slate-600">Target adalah pembelian minimum. Pesanan tetap boleh melewati target.</p></div>
+          <Link href={cycleHref(`/cycles/${cycle.id}`)} className="mt-3 inline-flex min-h-11 shrink-0 items-center gap-1 text-sm font-bold text-emerald-800 hover:text-emerald-950 sm:mt-0">Atur target dan rekap <ArrowRight className="h-4 w-4" /></Link>
         </div>
-      </div>
+        <div className="grid @2xl:grid-cols-2">{data.targets.map((target) => <TargetPanel key={target.groupCode} target={target} variants={(data.variants ?? []).filter((variant) => variant.groupCode === target.groupCode)} />)}</div>
+        {data.variantsUnavailable ? <p className="border-t border-slate-200 px-5 py-3 text-xs text-amber-900">Rincian varian belum dapat dimuat. Target gabungan tetap ditampilkan.</p> : null}
+      </section>
 
-      {/* 3. OPERATIONAL MATRIX (Asymmetric: Roster Ledger on Left, Financial on Right) */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* LEFT COLUMN (Span 2): Member Rotation & Order Roster */}
-        <div className="lg:col-span-2 bg-white border border-slate-200/90 rounded-2xl p-5 sm:p-6 shadow-xs flex flex-col justify-between">
+      <div className="grid items-start gap-6 @4xl:grid-cols-[minmax(0,1.7fr)_minmax(0,1fr)]">
+        <div className="min-w-0 space-y-6">
+        <section className="rounded-xl border border-slate-200 bg-white p-5" aria-labelledby="rotation-heading">
           <div>
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4 pb-3 border-b border-slate-100">
-              <div>
-                <div className="flex items-center gap-2">
-                  <Users className="w-5 h-5 text-emerald-700" />
-                  <h3 className="font-extrabold text-slate-900 text-base tracking-tight">
-                    Jadwal Rotasi Giliran Anggota
-                  </h3>
-                </div>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  Partisipasi rotasi memastikan target kuota mingguan tercapai merata di setiap sub-grup.
-                </p>
-              </div>
-
-              <div className="flex items-center gap-2 text-xs font-semibold tabular-nums self-start sm:self-auto">
-                <span className="text-slate-600">Partisipasi:</span>
-                <span className="text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200/50">
-                  {rotation?.orderedCount} / {rotation?.scheduledCount} ({rotation?.percentage}%)
-                </span>
-              </div>
-            </div>
-
-            {/* Tactile Segment Filter */}
-            <div className="inline-flex bg-slate-100 p-1 rounded-xl mb-3 text-xs font-medium w-full sm:w-auto">
-              <button
-                onClick={() => setRotationFilter('all')}
-                className={`flex-1 sm:flex-none px-3.5 py-1.5 rounded-lg text-center transition-all cursor-pointer ${
-                  rotationFilter === 'all'
-                    ? 'bg-white text-slate-900 font-bold shadow-xs'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                Semua ({scheduledMembers.length})
-              </button>
-              <button
-                onClick={() => setRotationFilter('pending')}
-                className={`flex-1 sm:flex-none px-3.5 py-1.5 rounded-lg text-center transition-all cursor-pointer ${
-                  rotationFilter === 'pending'
-                    ? 'bg-white text-amber-800 font-bold shadow-xs'
-                    : 'text-slate-600 hover:text-amber-700'
-                }`}
-              >
-                Belum Order ({pendingCount})
-              </button>
-              <button
-                onClick={() => setRotationFilter('ordered')}
-                className={`flex-1 sm:flex-none px-3.5 py-1.5 rounded-lg text-center transition-all cursor-pointer ${
-                  rotationFilter === 'ordered'
-                    ? 'bg-white text-emerald-800 font-bold shadow-xs'
-                    : 'text-slate-600 hover:text-emerald-700'
-                }`}
-              >
-                Sudah Order ({orderedCount})
-              </button>
-            </div>
-
-            {/* Congratulatory Alert if all have ordered */}
-            {pendingCount === 0 && scheduledMembers.length > 0 && (
-              <div className="mb-3 p-3 bg-emerald-50 border border-emerald-200/80 rounded-xl text-xs text-emerald-800 font-medium flex items-center gap-2">
-                <CheckCircle2 className="w-4 h-4 text-emerald-700 shrink-0" />
-                <span>Luar biasa! Seluruh anggota giliran rotasi minggu ini telah menginput pesanan.</span>
-              </div>
-            )}
-
-            {/* Member Ledger List */}
-            <div className="divide-y divide-slate-100 max-h-80 overflow-y-auto pr-1">
-              {filteredRotationMembers.length === 0 ? (
-                <p className="text-xs text-slate-500 italic py-8 text-center">
-                  {scheduledMembers.length === 0
-                    ? 'Belum ada anggota yang dijadwalkan pada siklus ini.'
-                    : rotationFilter === 'pending'
-                    ? 'Seluruh anggota yang dijadwalkan sudah memesan.'
-                    : 'Belum ada anggota yang memesan.'}
-                </p>
-              ) : (
-                filteredRotationMembers.map((m) => (
-                  <div
-                    key={m.id}
-                    className="py-2.5 flex items-center justify-between gap-3 hover:bg-slate-50/80 px-2 rounded-lg transition-colors"
-                  >
-                    <div className="min-w-0 flex items-center gap-2.5">
-                      <div className="w-7 h-7 rounded-full bg-slate-100 border border-slate-200/80 flex items-center justify-center font-bold text-[11px] text-slate-700 shrink-0">
-                        {m.name.charAt(0).toUpperCase()}
-                      </div>
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          <span className="font-bold text-slate-900 text-xs truncate">{m.name}</span>
-                          {m.role === 'pengurus' && (
-                            <span className="text-[10px] bg-purple-100 text-purple-800 px-1.5 py-0.5 rounded font-semibold">
-                              Pengurus
-                            </span>
-                          )}
-                          {m.role === 'pj' && (
-                            <span className="text-[10px] bg-sky-100 text-sky-800 px-1.5 py-0.5 rounded font-semibold">
-                              PJ
-                            </span>
-                          )}
-                        </div>
-                        <span className="text-[11px] text-slate-500 block truncate">{m.groupName}</span>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-2 shrink-0">
-                      {m.isOrdered ? (
-                        <span className="inline-flex items-center gap-1 text-[11px] font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200/70 px-2.5 py-0.5 rounded-full">
-                          <CheckCircle2 className="w-3 h-3 text-emerald-700" />
-                          Sudah Order
-                        </span>
-                      ) : (
-                        <div className="flex items-center gap-1.5">
-                          <span className="inline-flex items-center gap-1 text-[11px] font-semibold bg-amber-50 text-amber-800 border border-amber-200/70 px-2 py-0.5 rounded-full">
-                            <Clock className="w-3 h-3 text-amber-600" />
-                            Belum
-                          </span>
-                          <a
-                            href={getWhatsAppUrl(
-                              m.phone,
-                              `Halo ${m.name}, pesanan sembako siklus ${cycle.label} sudah dibuka ya. Mohon konfirmasi pesanannya sebelum deadline hari Selasa.`
-                            )}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            title="Kirim pesan WA"
-                            className="inline-flex items-center gap-1 text-[11px] font-semibold bg-emerald-700 hover:bg-emerald-800 text-white px-2.5 py-1 rounded-lg transition-colors shadow-2xs"
-                          >
-                            <MessageSquare className="w-3 h-3" />
-                            Ingatkan
-                          </a>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                ))
-              )}
+            <div className="flex items-center justify-between gap-3"><div><h2 id="rotation-heading" className="font-extrabold text-slate-950">Giliran anggota</h2>{rotation && rotation.scheduledCount > 0 ? <p className="mt-1 text-sm text-slate-600">{rotation.orderedCount} dari {rotation.scheduledCount} anggota sudah memesan</p> : null}</div><Users className="h-5 w-5 shrink-0 text-slate-500" /></div>
+            <div className="mt-4 divide-y divide-slate-100 border-y border-slate-200">
+              {rotation?.pendingMembers.slice(0, 5).map((member) => <div key={member.id} className="flex items-center justify-between gap-3 py-3"><div className="min-w-0"><p className="truncate text-sm font-bold text-slate-900">{member.name}</p><p className="truncate text-xs text-slate-500">{member.groupName}</p></div><Badge variant="amber" size="sm"><Clock3 className="h-3 w-3" /> Belum pesan</Badge></div>)}
+              {rotation && rotation.scheduledCount > 0 && rotation.pendingMembers.length === 0 ? <div className="flex items-center gap-2 py-4 text-sm font-semibold text-emerald-800"><CheckCircle2 className="h-4 w-4" /> Semua anggota giliran sudah memesan.</div> : null}
+              {!rotation || rotation.scheduledCount === 0 ? <p className="py-4 text-sm text-slate-500">Belum ada anggota yang dijadwalkan.</p> : null}
             </div>
           </div>
+        </section>
 
-          <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
-            <span>Kelola giliran rotasi anggota untuk siklus mendatang</span>
-            <Link
-              href={`/cycles/${cycle.id}`}
-              className="font-semibold text-emerald-700 hover:text-emerald-800 flex items-center gap-1"
-            >
-              Buka Manajemen Rotasi
-              <ArrowRight className="w-3.5 h-3.5" />
+      <section className="@container/orders rounded-xl border border-slate-200 bg-white p-5" aria-labelledby="recent-heading">
+        <div className="flex items-center justify-between gap-3"><div><h2 id="recent-heading" className="font-extrabold text-slate-950">Pesanan terbaru</h2><p className="mt-1 text-sm text-slate-600">Lima input terakhir. Pilih pesanan untuk melihat pembayaran.</p></div><Link href={cycleHref('/orders')} className="inline-flex min-h-11 items-center text-sm font-bold text-emerald-800">Semua</Link></div>
+        <div className="mt-4 divide-y divide-slate-100 border-y border-slate-200">
+          {data.recentOrders.map((order) => (
+            <Link key={order.id} href={cycleHref(`/payments?orderId=${encodeURIComponent(order.id)}`)} className="grid min-h-11 gap-2 py-3 text-sm hover:bg-slate-50 @lg/orders:grid-cols-[minmax(0,1fr)_auto_auto] @lg/orders:items-center @lg/orders:px-2">
+              <div className="min-w-0"><p className="truncate font-bold text-slate-900">{order.memberName}</p><p className="truncate text-xs text-slate-500">{order.groupName} · {order.itemCount} produk</p></div>
+              <span className="font-extrabold tabular-nums text-slate-950">{formatCurrency(order.totalAmount)}</span>
+              <Badge variant={order.paymentSummary.status === 'paid' ? 'emerald' : order.paymentSummary.status === 'unverified' ? 'slate' : 'amber'} size="sm">{order.paymentSummary.status === 'partial' ? 'Cicilan' : order.paymentSummary.status === 'paid' ? 'Lunas' : order.paymentSummary.status === 'unverified' ? 'Belum diverifikasi' : 'Belum bayar'}</Badge>
             </Link>
-          </div>
+          ))}
+          {data.recentOrders.length === 0 ? <p className="py-8 text-center text-sm text-slate-500">Belum ada pesanan pada minggu ini.</p> : null}
+        </div>
+      </section>
         </div>
 
-        {/* RIGHT COLUMN (Span 1): Financial Command & Fast Navigation */}
-        <div className="space-y-6">
-          {/* Financial Balance Card */}
-          <div className="bg-white border border-slate-200/90 rounded-2xl p-5 shadow-xs">
-            <div className="flex items-center justify-between mb-3 pb-2 border-b border-slate-100">
-              <div className="flex items-center gap-2">
-                <CreditCard className="w-4.5 h-4.5 text-emerald-700" />
-                <h3 className="font-extrabold text-slate-900 text-sm tracking-tight">
-                  Rekap Billing & Kas
-                </h3>
+        <div className="min-w-0 space-y-6">
+        <aside className="rounded-xl border border-slate-200 bg-white p-5" aria-labelledby="finance-heading">
+          <div className="flex items-center justify-between gap-3"><h2 id="finance-heading" className="font-extrabold text-slate-950">Uang masuk dan piutang</h2><CircleDollarSign className="h-5 w-5 shrink-0 text-emerald-800" /></div>
+          {finances ? (
+            <dl className="mt-4">
+              <div className="border-y border-slate-200 bg-slate-50 px-3 py-3"><dt className="text-xs font-semibold text-slate-600">Nilai pesanan</dt><dd className="mt-1 text-xl font-black tabular-nums text-slate-950 [overflow-wrap:anywhere]">{formatCurrency(finances.orderValue)}</dd><p className="mt-1 text-xs text-slate-600">{finances.orderCount} pesanan aktif</p></div>
+              <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,140px),1fr))] gap-3 py-4">
+                <div className="rounded-lg bg-emerald-50 p-3"><dt className="text-xs font-semibold text-emerald-900">Pembayaran diterima</dt><dd className="mt-1 font-extrabold tabular-nums text-emerald-950 [overflow-wrap:anywhere]">{formatCurrency(finances.receivedPayments)}</dd></div>
+                <div className="rounded-lg bg-rose-50 p-3"><dt className="text-xs font-semibold text-rose-900">Sisa diketahui</dt><dd className="mt-1 font-extrabold tabular-nums text-rose-950 [overflow-wrap:anywhere]">{formatCurrency(finances.knownOutstanding)}</dd></div>
               </div>
-              <Link
-                href="/orders"
-                className="text-xs font-semibold text-emerald-700 hover:text-emerald-800"
-              >
-                Semua Order
-              </Link>
-            </div>
+              <div className="border-y border-slate-200 py-3"><dt className="text-xs font-semibold text-slate-600">Nilai pembelian terkonfirmasi</dt><dd className="mt-1 text-sm font-bold tabular-nums text-slate-900 [overflow-wrap:anywhere]">{finances.purchaseValue === null ? 'Belum diketahui' : formatCurrency(finances.purchaseValue)}</dd></div>
+            </dl>
+          ) : <p className="mt-4 text-sm text-slate-600">Ringkasan keuangan belum tersedia.</p>}
+          {finances?.totalIncomplete ? <div className="mt-3 flex gap-2 rounded-lg bg-amber-50 p-3 text-xs leading-5 text-amber-900"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" /><span>{finances.unknownBalanceCount} saldo pesanan lama belum diverifikasi. Total piutang belum lengkap.</span></div> : null}
+          <Link href={cycleHref('/payments')} className="mt-3 inline-flex min-h-11 items-center text-sm font-bold text-emerald-800 hover:text-emerald-950">Buka rincian pembayaran</Link>
+        </aside>
 
-            {/* Total Readout */}
-            <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/70 mb-3">
-              <span className="text-xs text-slate-500 font-medium block">Total Nilai Pesanan Masuk</span>
-              <div className="text-2xl font-black text-slate-900 tracking-tight tabular-nums mt-0.5">
-                {formatCurrency(payments?.totalBilling || 0)}
-              </div>
-              <span className="text-[11px] text-slate-500 block mt-1">
-                Tercatat dari <strong className="text-slate-800 tabular-nums">{payments?.totalOrders || 0}</strong> pesanan
-              </span>
-            </div>
-
-            {/* Split Balance Grid */}
-            <div className="grid grid-cols-2 gap-2.5">
-              <div className="p-3 rounded-xl bg-emerald-50/70 border border-emerald-200/60">
-                <span className="text-[11px] font-bold text-emerald-800 block mb-0.5">
-                  Sudah Lunas
-                </span>
-                <span className="text-sm font-black text-emerald-950 tabular-nums block">
-                  {formatCurrency(payments?.paidAmount || 0)}
-                </span>
-                <span className="text-[10px] text-emerald-700 tabular-nums mt-0.5 block">
-                  {payments?.paidCount || 0} pesanan
-                </span>
-              </div>
-
-              <div className="p-3 rounded-xl bg-rose-50/70 border border-rose-200/60">
-                <span className="text-[11px] font-bold text-rose-800 block mb-0.5">
-                  Belum Bayar
-                </span>
-                <span className="text-sm font-black text-rose-950 tabular-nums block">
-                  {formatCurrency(payments?.unpaidAmount || 0)}
-                </span>
-                <span className="text-[10px] text-rose-700 tabular-nums mt-0.5 block">
-                  {payments?.unpaidCount || 0} pesanan
-                </span>
-              </div>
-            </div>
-          </div>
-
-          {/* Operational Workflow Card */}
-          <div className="bg-white border border-slate-200/90 rounded-2xl p-5 shadow-xs">
-            <div className="flex items-center gap-2 mb-3 pb-2 border-b border-slate-100">
-              <TrendingUp className="w-4.5 h-4.5 text-emerald-700" />
-              <h3 className="font-extrabold text-slate-900 text-sm tracking-tight">
-                Alur Kerja Mingguan
-              </h3>
-            </div>
-
-            <div className="space-y-2">
-              <Link
-                href="/orders"
-                className="flex items-center justify-between p-3 rounded-xl border border-slate-200/80 hover:border-emerald-300 hover:bg-emerald-50/40 transition-all text-xs font-medium text-slate-800 group"
-              >
-                <div className="flex items-center gap-2.5">
-                  <div className="w-7 h-7 rounded-lg bg-emerald-100 text-emerald-800 flex items-center justify-center">
-                    <ShoppingCart className="w-3.5 h-3.5" />
-                  </div>
-                  <span>Entri Pesanan Anggota</span>
-                </div>
-                <ArrowRight className="w-3.5 h-3.5 text-slate-400 group-hover:text-emerald-700 transition-colors" />
-              </Link>
-
-              <Link
-                href={`/cycles/${cycle.id}`}
-                className="flex items-center justify-between p-3 rounded-xl border border-slate-200/80 hover:border-emerald-300 hover:bg-emerald-50/40 transition-all text-xs font-medium text-slate-800 group"
-              >
-                <div className="flex items-center gap-2.5">
-                  <div className="w-7 h-7 rounded-lg bg-amber-100 text-amber-800 flex items-center justify-center">
-                    <MessageSquare className="w-3.5 h-3.5" />
-                  </div>
-                  <span>Ekspor Rekap Supplier (L4)</span>
-                </div>
-                <ArrowRight className="w-3.5 h-3.5 text-slate-400 group-hover:text-emerald-700 transition-colors" />
-              </Link>
-
-              <Link
-                href="/reports"
-                className="flex items-center justify-between p-3 rounded-xl border border-slate-200/80 hover:border-emerald-300 hover:bg-emerald-50/40 transition-all text-xs font-medium text-slate-800 group"
-              >
-                <div className="flex items-center gap-2.5">
-                  <div className="w-7 h-7 rounded-lg bg-sky-100 text-sky-800 flex items-center justify-center">
-                    <Package className="w-3.5 h-3.5" />
-                  </div>
-                  <span>Penerimaan Barang & Margin</span>
-                </div>
-                <ArrowRight className="w-3.5 h-3.5 text-slate-400 group-hover:text-emerald-700 transition-colors" />
-              </Link>
-            </div>
-          </div>
+        <section className="rounded-xl border border-slate-200 bg-white p-5" aria-labelledby="workflow-heading">
+          <h2 id="workflow-heading" className="font-extrabold text-slate-950">Alur kerja minggu ini</h2>
+          <div className="mt-4 flex items-start gap-2"><ActionIcon className="mt-0.5 h-4 w-4 shrink-0 text-emerald-800" /><h3 className="text-sm font-bold text-slate-950">{action.title}</h3></div>
+          <p className="mt-2 text-sm leading-6 text-slate-600">{action.detail}</p>
+          <Link href={cycleHref(action.href)} className="mt-3 flex min-h-11 items-center justify-between gap-3 rounded-lg bg-emerald-50 px-3 py-2 text-sm font-bold text-emerald-900 hover:bg-emerald-100">{action.label}<ArrowRight className="h-4 w-4 shrink-0" /></Link>
+          <nav aria-label="Tahapan kerja minggu ini" className="mt-3 divide-y divide-slate-200 border-t border-slate-200">
+            {[{ href: '/orders', label: 'Pesanan anggota' }, { href: `/cycles/${cycle.id}`, label: 'Rekap supplier' }, { href: '/inventory', label: 'Penerimaan barang' }].filter((step) => step.href !== action.href).map((step) => <Link key={step.href} href={cycleHref(step.href)} className="flex min-h-11 items-center justify-between gap-3 py-3 text-sm font-semibold text-slate-700 hover:text-emerald-900">{step.label}<ArrowRight className="h-4 w-4 shrink-0" /></Link>)}
+          </nav>
+        </section>
         </div>
       </div>
     </div>
   )
+}
+
+export default function DashboardPage() {
+  return <Suspense fallback={<div className="h-64 animate-pulse rounded-xl bg-slate-200/60" />}><DashboardContent /></Suspense>
 }

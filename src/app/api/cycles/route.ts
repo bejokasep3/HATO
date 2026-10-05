@@ -1,41 +1,47 @@
+import { authenticateAdmin, withAdmin } from '@/lib/auth/admin'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { z } from 'zod'
+import { createCycleSchema } from '../../../../shared/contracts/cycles'
+import { createCycle } from '@/lib/services/cycles'
+import { mutationErrorResponse, requireIdempotencyKey } from '@/lib/services/mutation'
+import { paymentSummary } from '@/lib/domain/payments'
+import { sumMoney } from '@/lib/domain/money'
+import { hasOperationalSchema, operationalSchemaGuard } from '@/lib/services/schema-capabilities'
+import { getLegacyCycles } from '@/lib/services/legacy-readers'
 
-const cycleSchema = z.object({
-  label: z.string().min(2, 'Label siklus minimal 2 karakter'),
-  periodStart: z.string().transform((str) => new Date(str)),
-  orderDeadline: z.string().transform((str) => new Date(str)),
-  deliveryDate: z.string().transform((str) => new Date(str)),
-  status: z.enum(['draft', 'open', 'closed', 'delivered', 'completed']).default('draft'),
-  notes: z.string().nullable().optional(),
-})
-
-export async function GET() {
+async function GETImpl() {
   try {
+    if (!await hasOperationalSchema(prisma)) return NextResponse.json(await getLegacyCycles(prisma))
     const cycles = await prisma.cycle.findMany({
       include: {
         _count: {
           select: {
-            orders: true,
             rotationSchedules: true,
           },
         },
         orders: {
+          where: { cancelledAt: null },
           select: {
             totalAmount: true,
-            paymentStatus: true,
+            ledgerReconciledAt: true,
+            payments: { select: { amount: true, reversedAt: true } },
           },
         },
+        targets: true,
       },
       orderBy: { periodStart: 'desc' },
     })
 
     const formatted = cycles.map((c) => {
-      const totalAmount = c.orders.reduce((sum, o) => sum + Number(o.totalAmount), 0)
-      const paidAmount = c.orders
-        .filter((o) => o.paymentStatus === 'paid')
-        .reduce((sum, o) => sum + Number(o.totalAmount), 0)
+      const orderValue = sumMoney(c.orders.map((order) => order.totalAmount.toFixed(2)))
+      const summaries = c.orders.map((order) => paymentSummary(
+        order.totalAmount.toFixed(2),
+        order.payments.map((payment) => ({ amount: payment.amount.toFixed(2), reversed: Boolean(payment.reversedAt) })),
+        Boolean(order.ledgerReconciledAt),
+      ))
+      const verified = summaries.filter((summary) => summary.status !== 'unverified')
+      const receivedPayments = sumMoney(verified.map((summary) => summary.paidAmount!))
+      const knownOutstanding = sumMoney(verified.map((summary) => summary.outstandingAmount!))
 
       return {
         id: c.id,
@@ -45,10 +51,19 @@ export async function GET() {
         deliveryDate: c.deliveryDate,
         status: c.status,
         notes: c.notes,
-        totalOrders: c._count.orders,
+        totalOrders: c.orders.length,
         totalRotation: c._count.rotationSchedules,
-        totalAmount,
-        paidAmount,
+        totalAmount: Number(orderValue),
+        paidAmount: Number(receivedPayments),
+        orderValue,
+        receivedPayments,
+        knownOutstanding,
+        unknownBalanceCount: summaries.length - verified.length,
+        periodEnd: c.periodEnd,
+        supplierDeadline: c.supplierDeadline,
+        periodState: c.periodState,
+        version: c.version,
+        targets: c.targets.map((target) => ({ groupCode: target.groupCode, quantity: target.quantity.toFixed(2), unit: target.unit })),
       }
     })
 
@@ -59,72 +74,20 @@ export async function GET() {
   }
 }
 
-export async function POST(request: NextRequest) {
+async function POSTImpl(request: NextRequest) {
   try {
-    const body = await request.json()
-    const validated = cycleSchema.parse(body)
-
-    if (validated.periodStart > validated.orderDeadline) {
-      return NextResponse.json(
-        { error: 'Tanggal mulai tidak boleh melebihi deadline pesanan.' },
-        { status: 400 }
-      )
-    }
-    if (validated.orderDeadline > validated.deliveryDate) {
-      return NextResponse.json(
-        { error: 'Deadline pesanan tidak boleh melebihi tanggal pengiriman.' },
-        { status: 400 }
-      )
-    }
-
-    if (validated.status === 'open') {
-      await prisma.cycle.updateMany({
-        where: { status: 'open' },
-        data: { status: 'completed' },
-      })
-    }
-
-    const cycle = await prisma.cycle.create({
-      data: validated,
-    })
-
-    // Pre-populate weekly prices from the most recent cycle
-    const previousCycle = await prisma.cycle.findFirst({
-      where: { id: { not: cycle.id } },
-      orderBy: { periodStart: 'desc' },
-      include: { weeklyPrices: true },
-    })
-
-    if (previousCycle && previousCycle.weeklyPrices.length > 0) {
-      for (const wp of previousCycle.weeklyPrices) {
-        await prisma.weeklyPrice.create({
-          data: {
-            cycleId: cycle.id,
-            productId: wp.productId,
-            price: wp.price,
-          },
-        })
-      }
-    } else {
-      // Default to product active list with 0 price if no previous cycle
-      const activeProducts = await prisma.product.findMany({ where: { isActive: true } })
-      for (const prod of activeProducts) {
-        await prisma.weeklyPrice.create({
-          data: {
-            cycleId: cycle.id,
-            productId: prod.id,
-            price: 0,
-          },
-        })
-      }
-    }
-
-    return NextResponse.json(cycle, { status: 201 })
-  } catch (error: any) {
-    if (error instanceof z.ZodError) {
-      return NextResponse.json({ error: error.issues }, { status: 400 })
-    }
-    console.error('Error creating cycle:', error)
-    return NextResponse.json({ error: 'Failed to create cycle' }, { status: 500 })
+    const auth = await authenticateAdmin(request)
+    if (auth.error) return auth.error
+    const schemaError = await operationalSchemaGuard(prisma)
+    if (schemaError) return schemaError
+    const key = requireIdempotencyKey(request.headers.get('Idempotency-Key'))
+    const body = createCycleSchema.parse(await request.json())
+    const result = await createCycle(prisma, { actorId: auth.identity.actorId, key, ...body })
+    return NextResponse.json(result.body, { status: result.status })
+  } catch (error) {
+    return mutationErrorResponse(error)
   }
 }
+
+export const GET = withAdmin(GETImpl)
+export const POST = POSTImpl

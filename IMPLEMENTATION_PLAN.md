@@ -1,3 +1,5 @@
+> Dokumen di bawah adalah rencana MVP historis. Untuk implementasi lanjutan gunakan [paket implementasi HATO untuk Sol](docs/implementation/README.md). Jangan memakai target tetap 20, Next.js 14, atau langkah inisialisasi ulang di dokumen lama sebagai instruksi aktif. Keputusan pengguna terbaru dan paket tersebut mengesampingkan asumsi lama.
+
 # Implementation Plan — SembakoDistro MVP
 
 ## Goal

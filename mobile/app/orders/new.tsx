@@ -1,15 +1,25 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, ActivityIndicator, Alert } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { getMembers, getProducts, getDashboard, getCycles, getOrders, createOrder } from '@/lib/api';
-import { Member, Product, Cycle } from '@/lib/types';
+import { getMembers, getProducts, getDashboard, getCycles, getOrders, getCyclePrices, createOrder, newIdempotencyKey } from '@/lib/api';
+import { persistentStorage } from '@/lib/auth';
+import { useAuth } from '@/lib/auth-context';
+import { Member, Product, Cycle, WeeklyPrice } from '@/lib/types';
 import { formatCurrency } from '@/lib/utils';
 
 export default function NewOrderScreen() {
   const router = useRouter();
+  const { operationalSchema } = useAuth();
+  const canMutate = operationalSchema === true;
   const params = useLocalSearchParams<{ cycleId?: string }>();
   const [members, setMembers] = useState<Member[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
+  const [prices, setPrices] = useState<Record<string, WeeklyPrice>>({});
+  const [pricesLoading, setPricesLoading] = useState(false);
+  const [priceError, setPriceError] = useState('');
+  const [loadError, setLoadError] = useState('');
+  const [saveError, setSaveError] = useState('');
+  const [reloadKey, setReloadKey] = useState(0);
   const [cycles, setCycles] = useState<Cycle[]>([]);
   const [currentCycle, setCurrentCycle] = useState<Cycle | null>(null);
   const [orderedMemberIds, setOrderedMemberIds] = useState<Set<string>>(new Set());
@@ -21,27 +31,54 @@ export default function NewOrderScreen() {
   const [searchMember, setSearchMember] = useState('');
   const [quantities, setQuantities] = useState<Record<string, string>>({});
   const [notes, setNotes] = useState('');
+  const [attempt, setAttempt] = useState<{ signature: string; key: string } | null>(null);
+  const [draftReady, setDraftReady] = useState(false);
+
+  const draftStorageKey = currentCycle ? `hato.order-draft.${currentCycle.id}` : null;
+
+  useEffect(() => {
+    if (!draftStorageKey) return;
+    let active = true;
+    setDraftReady(false);
+    persistentStorage.getItem(draftStorageKey).then((raw) => {
+      if (!active || !raw) return;
+      try {
+        const draft = JSON.parse(raw) as { memberId?: string; search?: string; quantities?: Record<string, string>; notes?: string; attempt?: { signature: string; key: string } };
+        setSelectedMemberId(draft.memberId ?? null);
+        setSearchMember(draft.search ?? '');
+        setQuantities(draft.quantities ?? {});
+        setNotes(draft.notes ?? '');
+        setAttempt(draft.attempt ?? null);
+      } catch { void persistentStorage.removeItem(draftStorageKey); }
+    }).finally(() => { if (active) setDraftReady(true); });
+    return () => { active = false; };
+  }, [draftStorageKey]);
+
+  useEffect(() => {
+    if (!draftStorageKey || !draftReady) return;
+    const timer = setTimeout(() => {
+      void persistentStorage.setItem(draftStorageKey, JSON.stringify({ memberId: selectedMemberId, search: searchMember, quantities, notes, attempt }));
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [attempt, draftReady, draftStorageKey, notes, quantities, searchMember, selectedMemberId]);
 
   const loadCycleOrders = async (cId: string) => {
-    try {
-      const orders = await getOrders(cId).catch(() => []);
-      const setIds = new Set<string>();
-      orders.forEach(o => setIds.add(o.memberId));
-      setOrderedMemberIds(setIds);
-      setSelectedMemberId(prev => (prev && setIds.has(prev) ? null : prev));
-    } catch (e) {
-      console.error(e);
-    }
+    const orders = await getOrders(cId);
+    const setIds = new Set<string>();
+    orders.forEach(o => setIds.add(o.memberId));
+    setOrderedMemberIds(setIds);
+    setSelectedMemberId(prev => (prev && setIds.has(prev) ? null : prev));
   };
 
   useEffect(() => {
     async function loadData() {
+      setLoadError('');
       try {
         const [dashData, cyclesData, membersData, productsData] = await Promise.all([
           getDashboard().catch(() => null),
-          getCycles().catch(() => []),
-          getMembers().catch(() => []),
-          getProducts().catch(() => []),
+          getCycles(),
+          getMembers(),
+          getProducts(),
         ]);
         setCycles(cyclesData || []);
 
@@ -64,17 +101,40 @@ export default function NewOrderScreen() {
           await loadCycleOrders(targetCycle.id);
         }
       } catch (error) {
-        console.error('Failed to load new order data:', error);
+        setLoadError(error instanceof Error ? error.message : 'Data pesanan gagal dimuat.');
       } finally {
         setLoading(false);
       }
     }
     loadData();
-  }, [params.cycleId]);
+  }, [params.cycleId, reloadKey]);
+
+  useEffect(() => {
+    if (!currentCycle) return;
+    let active = true;
+    setPrices({});
+    setPriceError('');
+    setPricesLoading(true);
+    getCyclePrices(currentCycle.id).then((items) => {
+      if (active) setPrices(Object.fromEntries(items.map((item) => [item.productId, item])));
+    }).catch((error: unknown) => {
+      if (active) setPriceError(error instanceof Error ? error.message : 'Harga siklus gagal dimuat.');
+    }).finally(() => {
+      if (active) setPricesLoading(false);
+    });
+    return () => { active = false; };
+  }, [currentCycle?.id]);
 
   const handleSelectCycle = async (cycle: Cycle) => {
     setCurrentCycle(cycle);
-    await loadCycleOrders(cycle.id);
+    setSelectedMemberId(null);
+    setQuantities({});
+    setSaveError('');
+    try {
+      await loadCycleOrders(cycle.id);
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : 'Pesanan siklus gagal dimuat.');
+    }
   };
 
   const filteredMembers = members.filter(m => 
@@ -84,13 +144,17 @@ export default function NewOrderScreen() {
 
   const calculateTotal = () => {
     return products.reduce((sum, p) => {
-      const qty = parseFloat(quantities[p.id] || '0') || 0;
-      const price = p.defaultPrice || 0;
+      const qty = Number((quantities[p.id] || '0').replace(',', '.')) || 0;
+      const price = prices[p.id]?.consumerPrice ?? 0;
       return sum + qty * price;
     }, 0);
   };
 
   const handleSubmit = async () => {
+    if (!canMutate) {
+      setSaveError('Input pesanan belum tersedia karena database masih menggunakan schema operasional lama.');
+      return;
+    }
     if (!currentCycle) {
       Alert.alert('Error', 'Tidak ada siklus aktif saat ini.');
       return;
@@ -100,12 +164,34 @@ export default function NewOrderScreen() {
       return;
     }
 
-    const items = products
-      .filter(p => parseFloat(quantities[p.id] || '0') > 0)
+    if (loadError || pricesLoading || priceError) {
+      setSaveError(loadError || priceError || 'Harga sedang dimuat.');
+      return;
+    }
+
+    const filledProducts = products.filter((product) => (quantities[product.id] || '').trim() !== '');
+    const invalidProduct = filledProducts.find((product) => {
+      const raw = quantities[product.id].trim();
+      if (!/^\d+(?:[,.]\d{1,2})?$/.test(raw)) return true;
+      const quantity = Number(raw.replace(',', '.'));
+      return quantity <= 0 || (product.unit === 'bungkus' && !Number.isInteger(quantity));
+    });
+    if (invalidProduct) {
+      setSaveError(`Jumlah ${invalidProduct.name} tidak valid. Gunakan angka positif sesuai satuan.`);
+      return;
+    }
+
+    const missingPrice = filledProducts.find((product) => !prices[product.id] || prices[product.id].consumerPrice <= 0);
+    if (missingPrice) {
+      setSaveError(`Harga ${missingPrice.name} belum diatur untuk siklus ini.`);
+      return;
+    }
+
+    const items = filledProducts
       .map(p => ({
         productId: p.id,
-        quantity: parseFloat(quantities[p.id] || '0'),
-        unitPrice: p.defaultPrice || 0,
+        quantity: quantities[p.id].replace(',', '.'),
+        priceType: 'consumer' as const,
       }));
 
     if (items.length === 0) {
@@ -114,21 +200,28 @@ export default function NewOrderScreen() {
     }
 
     setSubmitting(true);
+    setSaveError('');
     try {
-      await createOrder({
+      const payload = {
         cycleId: currentCycle.id,
         memberId: selectedMemberId,
         items,
         notes: notes.trim() || undefined,
-        paymentStatus: 'unpaid',
-      });
+      };
+      const signature = JSON.stringify(payload);
+      const nextAttempt = attempt?.signature === signature ? attempt : { signature, key: newIdempotencyKey() };
+      setAttempt(nextAttempt);
+      if (draftStorageKey) await persistentStorage.setItem(draftStorageKey, JSON.stringify({ memberId: selectedMemberId, search: searchMember, quantities, notes, attempt: nextAttempt }));
+      await createOrder(payload, { idempotencyKey: nextAttempt.key });
+      if (draftStorageKey) await persistentStorage.removeItem(draftStorageKey);
+      setDraftReady(false);
+      setAttempt(null);
 
       Alert.alert('Sukses', 'Pesanan berhasil disimpan!', [
         { text: 'OK', onPress: () => router.back() }
       ]);
-    } catch (error: any) {
-      console.error(error);
-      Alert.alert('Gagal', error?.message || 'Gagal menyimpan pesanan. Pastikan koneksi server terhubung.');
+    } catch (error: unknown) {
+      setSaveError(error instanceof Error ? error.message : 'Pesanan gagal disimpan. Periksa koneksi, lalu coba lagi.');
     } finally {
       setSubmitting(false);
     }
@@ -144,6 +237,20 @@ export default function NewOrderScreen() {
 
   return (
     <ScrollView style={styles.container} keyboardShouldPersistTaps="handled">
+      {operationalSchema === false ? (
+        <View style={styles.warningCard}>
+          <Text style={styles.warningText}>Mode baca aktif. Input pesanan dinonaktifkan sampai schema operasional diperbarui.</Text>
+        </View>
+      ) : null}
+      {loadError ? (
+        <View style={styles.warningCard}>
+          <Text style={styles.warningText}>{loadError}</Text>
+          <TouchableOpacity onPress={() => { setLoading(true); setReloadKey((value) => value + 1); }} accessibilityRole="button">
+            <Text style={styles.warningText}>Coba muat ulang</Text>
+          </TouchableOpacity>
+        </View>
+      ) : null}
+      {priceError ? <Text style={styles.warningText}>{priceError}</Text> : null}
       {cycles.length > 1 && (
         <View style={{ marginBottom: 12 }}>
           <Text style={styles.label}>Pilih Siklus</Text>
@@ -225,7 +332,7 @@ export default function NewOrderScreen() {
             <View style={styles.productInfo}>
               <Text style={styles.productName}>{p.name}</Text>
               <Text style={styles.productPrice}>
-                {formatCurrency(p.defaultPrice || 0)} / {p.unit}
+                {pricesLoading ? 'Memuat harga…' : prices[p.id]?.consumerPrice > 0 ? `${formatCurrency(prices[p.id].consumerPrice)} / ${p.unit}` : 'Harga belum diatur'}
               </Text>
             </View>
             <View style={styles.inputContainer}>
@@ -265,10 +372,12 @@ export default function NewOrderScreen() {
         </View>
       </View>
 
+      {saveError ? <Text style={styles.warningText} accessibilityRole="alert">{saveError}</Text> : null}
+
       <TouchableOpacity 
-        style={[styles.submitBtn, submitting && styles.submitBtnDisabled]} 
+        style={[styles.submitBtn, (!canMutate || submitting || !!loadError || pricesLoading || !!priceError) && styles.submitBtnDisabled]}
         onPress={handleSubmit}
-        disabled={submitting}
+        disabled={!canMutate || submitting || !!loadError || pricesLoading || !!priceError}
       >
         {submitting ? (
           <ActivityIndicator color="#ffffff" />

@@ -2,13 +2,15 @@ import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
 import { SymbolView } from 'expo-symbols';
 import { useRouter } from 'expo-router';
+import { useAuth } from '@/lib/auth-context';
 
 export default function MoreScreen() {
   const router = useRouter();
+  const { signOut, operationalSchema } = useAuth();
   
   const menuItems = [
+    { title: 'Siklus, Target & Rekap', icon: 'calendar', route: '/cycles' },
     { title: 'Komunitas (Anggota & Sub-Grup)', icon: 'person.2.fill', route: '/members' },
-    { title: 'Penerimaan Barang (Siklus)', icon: 'shippingbox.fill', route: '/inventory' },
     { title: 'Laporan & Keuangan', icon: 'chart.bar.xaxis', route: '/reports' },
   ];
 
@@ -19,6 +21,8 @@ export default function MoreScreen() {
         <Text style={styles.subTitle}>Sistem Distribusi Sembako</Text>
         <Text style={styles.version}>Versi 1.0.0 (Mobile)</Text>
       </View>
+
+      {operationalSchema === false ? <View style={styles.warningBox}><Text style={styles.warningText}>Mode baca aktif. Database masih memakai schema operasional lama, sehingga perubahan siklus, pesanan, stok, dan pembayaran dinonaktifkan.</Text></View> : null}
 
       <View style={styles.menuContainer}>
         {menuItems.map((item, index) => (
@@ -38,10 +42,14 @@ export default function MoreScreen() {
         ))}
       </View>
 
+      <TouchableOpacity style={styles.menuItem} accessibilityRole="button" onPress={() => void signOut()}>
+        <Text style={styles.menuTitle}>Keluar dari akun</Text>
+      </TouchableOpacity>
+
       <View style={styles.infoBox}>
         <Text style={styles.infoTitle}>Informasi Aplikasi</Text>
         <Text style={styles.infoText}>
-          Aplikasi mobile ini terhubung langsung ke server HATO Manajer untuk mempermudah pengecekan target sembako mingguan, jadwal rotasi, serta pencatatan status bayar anggota langsung dari iPhone Anda melalui Expo Go.
+          HATO Manajer membantu memeriksa target mingguan, pesanan, barang datang, distribusi, serta cicilan anggota dari ponsel.
         </Text>
       </View>
     </ScrollView>
@@ -61,5 +69,7 @@ const styles = StyleSheet.create({
   menuTitle: { fontSize: 15, fontWeight: '600', color: '#1e293b' },
   infoBox: { margin: 16, padding: 16, backgroundColor: '#ffffff', borderRadius: 12, borderWidth: 1, borderColor: '#e2e8f0' },
   infoTitle: { fontSize: 14, fontWeight: 'bold', color: '#334155', marginBottom: 6 },
-  infoText: { fontSize: 12, color: '#64748b', lineHeight: 18 }
+  infoText: { fontSize: 12, color: '#64748b', lineHeight: 18 },
+  warningBox: { margin: 16, marginBottom: 0, padding: 14, borderRadius: 10, borderWidth: 1, borderColor: '#fde68a', backgroundColor: '#fffbeb' },
+  warningText: { color: '#78350f', fontSize: 12, lineHeight: 18 }
 });

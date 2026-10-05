@@ -3,9 +3,16 @@ export interface Cycle {
   label: string;
   status: string;
   periodStart: string;
-  orderDeadline: string;
+  orderDeadline?: string;
   deliveryDate: string;
   notes?: string;
+  periodEnd?: string | null;
+  supplierDeadline?: string | null;
+  periodState?: 'draft' | 'open' | 'closed' | null;
+  version?: number;
+  rulesVersion?: number;
+  recapConfirmedAt?: string | null;
+  receiptStatus?: string;
 }
 
 export interface CycleDetail extends Cycle {
@@ -20,6 +27,8 @@ export interface WeeklyPrice {
   productId: string;
   productName: string;
   price: number;
+  consumerPrice: number;
+  traderPrice: number;
 }
 
 export interface RotationMember {
@@ -65,7 +74,14 @@ export interface Order {
   itemCount?: number;
   items?: OrderItem[];
   member?: Member;
+  version?: number;
+  cancelledAt?: string | null;
+  paymentSummary?: PaymentSummary;
 }
+
+export type PaymentSummary =
+  | { status: 'unverified'; paidAmount: null; outstandingAmount: null }
+  | { status: 'unpaid' | 'partial' | 'paid'; paidAmount: string; outstandingAmount: string };
 
 export interface Member {
   id: string;
@@ -80,7 +96,7 @@ export interface Product {
   id: string;
   name: string;
   unit: string;
-  defaultPrice: number;
+  isActive: boolean;
 }
 
 export interface Group {
@@ -89,14 +105,12 @@ export interface Group {
 }
 
 export interface TargetItem {
-  id: string;
-  name: string;
+  groupCode: 'AYAM' | 'TAHU';
   unit: string;
-  targetQuantity: number;
-  actualQuantity: number;
-  percentage: number;
-  isMet: boolean;
-  breakdown?: { name: string; quantity: number }[];
+  target: string | null;
+  demand: string | null;
+  status: 'known' | 'unknown';
+  progress: null | { percentage: number | null; shortfall: string; excess: string; plannedPurchase: string };
 }
 
 export interface DashboardData {
@@ -111,15 +125,25 @@ export interface DashboardData {
     pendingMembers: RotationMember[];
     members: RotationMember[];
   };
-  payments: {
-    totalOrders: number;
-    totalBilling: number;
-    paidAmount: number;
-    unpaidAmount: number;
-    paidCount: number;
-    unpaidCount: number;
-  };
-  recentOrders: Order[];
+  finances: {
+    orderCount: number;
+    orderValue: string;
+    receivedPayments: string;
+    knownOutstanding: string;
+    unknownBalanceCount: number;
+    totalIncomplete: boolean;
+    purchaseValue: string | null;
+  } | null;
+  recentOrders: Array<{
+    id: string;
+    memberName: string;
+    groupName: string;
+    totalAmount: string;
+    paymentSummary: PaymentSummary;
+    orderStatus: string;
+    createdAt: string;
+    itemCount: number;
+  }>;
   totalMembers: number;
 }
 
@@ -128,47 +152,121 @@ export interface CreateOrderPayload {
   memberId: string;
   items: {
     productId: string;
-    quantity: number;
-    unitPrice: number;
+    quantity: string;
+    priceType: 'consumer' | 'trader';
   }[];
-  paymentStatus?: string;
   notes?: string;
+}
+
+export interface AvailabilityItem {
+  productId: string;
+  productName: string;
+  unit: string;
+  capacity: string | null;
+  allocated: string;
+  shipped: string;
+  availableToOrder: string | null;
+  shortage: string | null;
+  physicalRemaining: string | null;
+  reserved: string | null;
+  source: 'planned' | 'received' | 'unknown';
+}
+
+export interface AvailabilityResponse {
+  cycleId: string;
+  cycleVersion: number;
+  items: AvailabilityItem[];
+}
+
+export interface PaymentRecord {
+  id: string;
+  amount: string;
+  method: 'cash' | 'transfer' | 'other';
+  source?: string;
+  note?: string | null;
+  occurredAt: string | null;
+  createdAt?: string;
+  reversedAt?: string | null;
+  reversalReason?: string | null;
+}
+
+export interface OrderPaymentsResponse {
+  orderId: string;
+  orderStatus: string;
+  cancelledAt: string | null;
+  version: number;
+  member: { id: string; name: string; groupName: string | null };
+  cycle: { id: string; label: string };
+  totalAmount: string;
+  summary: PaymentSummary;
+  payments: PaymentRecord[];
+}
+
+export interface ReceivablesResponse {
+  page: number;
+  pageSize: number;
+  totalCount: number;
+  totalKnownOutstanding: string;
+  unreconciledOrderCount: number;
+  totalIncomplete: boolean;
+  items: Array<{
+    orderId: string;
+    cycleId: string;
+    cycleLabel: string;
+    memberId: string;
+    memberName: string;
+    totalAmount: string;
+    paidAmount: string;
+    outstandingAmount: string;
+  }>;
+}
+
+export interface SupplierRecapResponse {
+  cycleId: string;
+  cycleVersion: number;
+  periodState: 'draft' | 'open' | 'closed';
+  groups: Array<{ groupCode: 'AYAM' | 'TAHU'; target: string; demand: string; percentage: number | null; shortfall: string; plannedPurchase: string }>;
+  items: Array<{ productId: string; productName: string; unit: string; groupCode: 'AYAM' | 'TAHU' | 'NONE'; demand: string }>;
+  confirmed: null | {
+    id: string;
+    confirmedAt: string;
+    items: Array<{ productId: string; productName: string; unit: string; groupCode: string; quantity: string }>;
+    whatsappText: string;
+  };
 }
 
 export interface InventoryItem {
   productId: string;
   productName: string;
   unit: string;
-  category: string | null;
-  isTarget: boolean;
-  orderedQty: number;
-  receivedQty: number;
-  damagedQty: number;
-  purchasePrice: number;
-  totalCost: number;
-  revenue: number;
-  margin: number;
-  difference: number;
-  notes: string;
+  capacity: string | null;
+  allocated: string;
+  shipped: string;
+  availableToOrder: string | null;
+  shortage: string | null;
+  physicalRemaining: string | null;
+  reserved: string | null;
+  source: 'planned' | 'received' | 'unknown';
 }
 
 export interface InventoryResponse {
-  cycle: Cycle;
-  receipt: {
+  cycleId: string;
+  cycleVersion: number;
+  receipt: null | {
     id: string;
-    status: string;
-    receivedAt: string;
+    status: 'draft' | 'confirmed';
+    receivedAt: string | null;
     supplierNote: string | null;
-  } | null;
-  summary: {
-    totalOrderedQty: number;
-    totalReceivedQty: number;
-    totalDamagedQty: number;
-    totalPurchaseCost: number;
-    totalRevenue: number;
-    grossMargin: number;
-    marginPercentage: number;
-    hasDiscrepancy: boolean;
+    version: number;
+    confirmedAt: string | null;
+    items: Array<{
+      productId: string;
+      orderedQty: string;
+      receivedQty: string;
+      damagedQty: string;
+      purchasePrice: string;
+      notes: string | null;
+    }>;
   };
   items: InventoryItem[];
 }

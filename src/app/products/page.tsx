@@ -1,7 +1,8 @@
 'use client'
 
-import React, { useEffect, useState } from 'react'
+import React, { Suspense, useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
+import { useSearchParams } from 'next/navigation'
 import {
   Package,
   Plus,
@@ -9,7 +10,6 @@ import {
   Trash2,
   Search,
   Sparkles,
-  X,
   Filter,
   DollarSign,
   ArrowRight,
@@ -19,6 +19,8 @@ import { formatCurrency } from '@/lib/utils'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
+import { Modal } from '@/components/ui/Modal'
+import { useOperationalMode } from '@/components/AppShell'
 
 interface ProductItem {
   id: string
@@ -39,9 +41,13 @@ interface ProductItem {
   }
 }
 
-export default function ProductsPage() {
+function ProductsContent() {
+  const requestedCycleId = useSearchParams().get('cycleId')
+  const { operationalSchema } = useOperationalMode()
+  const canMutate = operationalSchema === true
   const [products, setProducts] = useState<ProductItem[]>([])
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState('')
   const [search, setSearch] = useState('')
   const [categoryFilter, setCategoryFilter] = useState('')
 
@@ -60,23 +66,36 @@ export default function ProductsPage() {
   const [category, setCategory] = useState('Sembako Pokok')
   const [sortOrder, setSortOrder] = useState<number>(0)
 
-  const fetchProducts = async () => {
+  const fetchProducts = useCallback(async () => {
     try {
       setLoading(true)
-      const res = await fetch('/api/products')
-      const json = await res.json()
-      setProducts(json)
+      setLoadError('')
+      const responses = await Promise.all([
+        fetch('/api/products'),
+        ...(requestedCycleId ? [fetch(`/api/cycles/${encodeURIComponent(requestedCycleId)}/prices`), fetch('/api/cycles')] : []),
+      ])
+      if (responses.some((response) => !response.ok)) throw new Error('Katalog atau harga minggu gagal dimuat')
+      const [json, prices, cycles] = await Promise.all(responses.map((response) => response.json()))
+      if (!Array.isArray(json)) throw new Error('Katalog tidak valid')
+      if (requestedCycleId) {
+        const selectedCycle = (cycles as Array<{ id: string; label: string }>).find((cycle) => cycle.id === requestedCycleId)
+        if (!selectedCycle || !Array.isArray(prices)) throw new Error('Minggu kerja tidak ditemukan')
+        const byProduct = new Map((prices as Array<{ productId: string; consumerPrice: number; traderPrice: number }>).map((price) => [price.productId, price]))
+        setProducts((json as ProductItem[]).map((product) => ({ ...product, consumerPrice: byProduct.get(product.id)?.consumerPrice ?? null, traderPrice: byProduct.get(product.id)?.traderPrice ?? null, activeCycleId: requestedCycleId, activeCycleLabel: selectedCycle.label })))
+      } else setProducts(json)
     } catch (err) {
       console.error(err)
+      setProducts([])
+      setLoadError('Katalog atau harga minggu tidak dapat dimuat. Coba lagi untuk membaca data terbaru.')
       toast.error('Gagal memuat katalog produk')
     } finally {
       setLoading(false)
     }
-  }
+  }, [requestedCycleId])
 
   useEffect(() => {
     fetchProducts()
-  }, [])
+  }, [fetchProducts])
 
   const handleOpenCreateModal = () => {
     setEditingProduct(null)
@@ -106,14 +125,15 @@ export default function ProductsPage() {
 
   const handleSaveProduct = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (!canMutate) return
     try {
       setSubmitting(true)
 
       const payload = {
         name,
         unit,
-        consumerPrice: consumerPrice === '' ? undefined : Number(consumerPrice),
-        traderPrice: traderPrice === '' ? (consumerPrice === '' ? undefined : Number(consumerPrice)) : Number(traderPrice),
+        consumerPrice: requestedCycleId || consumerPrice === '' ? undefined : Number(consumerPrice),
+        traderPrice: requestedCycleId ? undefined : traderPrice === '' ? (consumerPrice === '' ? undefined : Number(consumerPrice)) : Number(traderPrice),
         isTarget,
         targetQuantity: isTarget && targetQuantity ? Number(targetQuantity) : null,
         category,
@@ -166,6 +186,7 @@ export default function ProductsPage() {
   }
 
   const handleToggleActive = async (productId: string, currentStatus: boolean) => {
+    if (!canMutate) return
     try {
       const res = await fetch('/api/products', {
         method: 'PATCH',
@@ -181,6 +202,7 @@ export default function ProductsPage() {
   }
 
   const handleDeleteProduct = async (p: ProductItem) => {
+    if (!canMutate) return
     const isUsed = (p._count?.orderItems || 0) > 0
     const confirmMessage = isUsed
       ? `Produk "${p.name}" sudah digunakan dalam riwayat pesanan. Menghapus akan menonaktifkannya dari siklus mendatang. Lanjutkan?`
@@ -220,6 +242,7 @@ export default function ProductsPage() {
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
+      {loadError ? <div role="alert" className="rounded-lg border border-rose-200 bg-rose-50 p-4 text-sm text-rose-900"><p>{loadError}</p><Button variant="secondary" className="mt-3" onClick={() => void fetchProducts()}>Coba lagi</Button></div> : null}
       {/* Top Header Command Bar */}
       <div className="bg-white border border-slate-200/90 rounded-2xl p-5 sm:p-6 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
@@ -236,6 +259,7 @@ export default function ProductsPage() {
         <Button
           variant="primary"
           onClick={handleOpenCreateModal}
+          disabled={!canMutate}
           icon={<Plus className="w-4 h-4" />}
         >
           Tambah Produk Baru
@@ -251,15 +275,15 @@ export default function ProductsPage() {
             </div>
             <div>
               <h3 className="font-extrabold text-slate-900 text-sm tracking-tight">
-                Harga Siklus Aktif: {activeCycle.label}
+                Harga {requestedCycleId ? 'minggu kerja' : 'minggu terbaru'}: {activeCycle.label}
               </h3>
               <p className="text-xs text-slate-500 mt-0.5">
-                Klik produk untuk mengubah Harga Konsumen & Pedagang, atau buka form batch untuk konfigurasi harga massal.
+                Data produk bersifat global. Harga mengikuti minggu yang tertera; buka pengaturan minggu untuk mengubah harga.
               </p>
             </div>
           </div>
           <Link
-            href={`/cycles/${activeCycle.id}`}
+            href={`/cycles/${activeCycle.id}?cycleId=${encodeURIComponent(activeCycle.id)}`}
             className="inline-flex items-center gap-1.5 bg-white hover:bg-slate-100 text-emerald-800 border border-slate-200/80 font-semibold px-3.5 py-2 rounded-xl text-xs transition-colors shrink-0 shadow-2xs self-start sm:self-auto"
           >
             Buka Form Batch Harga
@@ -306,7 +330,11 @@ export default function ProductsPage() {
             Tidak ada produk ditemukan.
           </div>
         ) : (
-          <div className="overflow-x-auto">
+          <>
+          <div className="divide-y divide-slate-200 md:hidden">
+            {filteredProducts.map((product) => <article key={product.id} className="p-4"><div className="flex flex-wrap items-center justify-between gap-2"><button type="button" onClick={() => handleOpenEditModal(product)} className="text-left text-sm font-bold text-slate-950">{product.name}</button><button type="button" disabled={!canMutate} onClick={() => void handleToggleActive(product.id, product.isActive)} className="rounded-lg border border-slate-200 px-3 text-xs font-semibold text-slate-700">{product.isActive ? 'Aktif' : 'Nonaktif'}</button></div><p className="mt-1 text-xs text-slate-500">{product.category ?? 'Tanpa kategori'} · per {product.unit}</p><dl className="mt-3 grid grid-cols-[repeat(auto-fit,minmax(min(100%,140px),1fr))] gap-3 text-sm"><div><dt className="text-xs text-slate-500">Harga konsumen</dt><dd className="mt-1 font-bold tabular-nums">{product.consumerPrice === null ? 'Belum tersedia' : formatCurrency(product.consumerPrice)}</dd></div><div><dt className="text-xs text-slate-500">Harga pedagang</dt><dd className="mt-1 font-bold tabular-nums text-emerald-800">{product.traderPrice === null ? 'Belum tersedia' : formatCurrency(product.traderPrice)}</dd></div></dl>{product.isTarget ? <p className="mt-3 text-xs font-semibold text-slate-600">{product.targetQuantity === null ? 'Target mengikuti kelompok pada minggu kerja' : `Target ${product.targetQuantity} ${product.unit} / minggu`}</p> : null}</article>)}
+          </div>
+          <div className="hidden md:block overflow-x-auto">
             <table className="w-full text-left text-sm">
               <thead className="bg-slate-50 text-slate-500 text-xs uppercase font-semibold border-b border-slate-100">
                 <tr>
@@ -329,7 +357,7 @@ export default function ProductsPage() {
                   >
                     <td className="py-3.5 px-4 font-bold text-slate-900">
                       <div className="flex items-center gap-2">
-                        <span className="hover:text-emerald-700 transition-colors">{p.name}</span>
+                        <button type="button" onClick={(event) => { event.stopPropagation(); handleOpenEditModal(p) }} className="min-h-11 text-left hover:text-emerald-700 transition-colors">{p.name}</button>
                         {p.isTarget && (
                           <span className="inline-flex items-center gap-1 text-[11px] bg-amber-100 text-amber-800 font-semibold px-2 py-0.5 rounded-full">
                             <Sparkles className="w-3 h-3 text-amber-600" />
@@ -357,7 +385,7 @@ export default function ProductsPage() {
                     <td className="py-3.5 px-4">
                       {p.isTarget ? (
                         <span className="text-xs font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-md inline-block tabular-nums">
-                          Min. {p.targetQuantity} {p.unit} / minggu
+                          {p.targetQuantity === null ? 'Target per kelompok' : `Min. ${p.targetQuantity} ${p.unit} / minggu`}
                         </span>
                       ) : (
                         <span className="text-xs text-slate-500">-</span>
@@ -365,6 +393,7 @@ export default function ProductsPage() {
                     </td>
                     <td className="py-3.5 px-4 text-center">
                       <button
+                        disabled={!canMutate}
                         onClick={(e) => {
                           e.stopPropagation()
                           handleToggleActive(p.id, p.isActive)
@@ -383,26 +412,14 @@ export default function ProductsPage() {
               </tbody>
             </table>
           </div>
+          </>
         )}
       </div>
 
       {/* CREATE / EDIT MODAL */}
-      {modalOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl relative animate-in fade-in zoom-in-95 duration-150">
-            <div className="flex items-center justify-between pb-4 border-b border-slate-100">
-              <h2 className="text-lg font-bold text-slate-900">
-                {editingProduct ? 'Edit Produk & Harga' : 'Tambah Produk Baru'}
-              </h2>
-              <button
-                onClick={() => setModalOpen(false)}
-                className="p-1 rounded-md text-slate-400 hover:text-slate-600"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <form onSubmit={handleSaveProduct} className="space-y-4 pt-4">
+      <Modal isOpen={modalOpen} onClose={() => setModalOpen(false)} title={!canMutate ? 'Rincian produk' : editingProduct ? 'Edit Produk' : 'Tambah Produk Baru'} maxWidth="md" description={!canMutate ? 'Mode baca-saja. Perubahan produk dan harga dinonaktifkan.' : requestedCycleId ? 'Harga ditampilkan untuk minggu kerja. Ubah harga melalui pengaturan minggu, bukan form produk global.' : undefined}>
+            <form onSubmit={handleSaveProduct} className="hato-form space-y-4 pt-4">
+              <fieldset disabled={!canMutate || submitting} className="space-y-4 min-w-0">
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">
                   Nama Komoditas
@@ -453,6 +470,7 @@ export default function ProductsPage() {
                     Harga Konsumen (Rp)
                   </label>
                   <input
+                    disabled={Boolean(requestedCycleId)}
                     type="number"
                     min="0"
                     step="any"
@@ -471,6 +489,7 @@ export default function ProductsPage() {
                     Harga Pedagang (Rp)
                   </label>
                   <input
+                    disabled={Boolean(requestedCycleId)}
                     type="number"
                     min="0"
                     step="any"
@@ -521,10 +540,12 @@ export default function ProductsPage() {
                 )}
               </div>
 
-              <div className="flex items-center justify-between pt-3 border-t border-slate-100">
+              </fieldset>
+              <div className="flex flex-wrap gap-3 items-center justify-between pt-3 border-t border-slate-100">
                 {editingProduct ? (
                   <button
                     type="button"
+                    disabled={!canMutate || submitting}
                     onClick={() => {
                       handleDeleteProduct(editingProduct)
                       setModalOpen(false)
@@ -548,7 +569,7 @@ export default function ProductsPage() {
                   </button>
                   <button
                     type="submit"
-                    disabled={submitting}
+                    disabled={!canMutate || submitting}
                     className="px-4 py-2 text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg disabled:opacity-50 shadow-xs"
                   >
                     {submitting
@@ -560,9 +581,11 @@ export default function ProductsPage() {
                 </div>
               </div>
             </form>
-          </div>
-        </div>
-      )}
+      </Modal>
     </div>
   )
+}
+
+export default function ProductsPage() {
+  return <Suspense fallback={<p role="status">Memuat katalog…</p>}><ProductsContent /></Suspense>
 }

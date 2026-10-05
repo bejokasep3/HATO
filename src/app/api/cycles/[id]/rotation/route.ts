@@ -1,12 +1,22 @@
+import { withAdmin } from '@/lib/auth/admin'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { hasOperationalSchema, operationalSchemaGuard } from '@/lib/services/schema-capabilities'
 
-export async function GET(
+async function GETImpl(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const { id } = await params
+    if (!await hasOperationalSchema(prisma)) {
+      const schedules = await prisma.rotationSchedule.findMany({
+        where: { cycleId: id },
+        select: { id: true, cycleId: true, memberId: true, status: true, createdAt: true, updatedAt: true, member: { select: { id: true, name: true, phone: true, role: true, group: { select: { id: true, name: true } } } } },
+        orderBy: [{ member: { group: { name: 'asc' } } }, { member: { name: 'asc' } }],
+      })
+      return NextResponse.json(schedules)
+    }
     const schedules = await prisma.rotationSchedule.findMany({
       where: { cycleId: id },
       include: {
@@ -26,13 +36,18 @@ export async function GET(
   }
 }
 
-export async function POST(
+async function POSTImpl(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const schemaError = await operationalSchemaGuard(prisma)
+    if (schemaError) return schemaError
     const { id } = await params
     const body = await request.json().catch(() => ({}))
+    const cycle = await prisma.cycle.findUnique({ where: { id }, select: { rulesVersion: true } })
+    if (!cycle) return NextResponse.json({ error: 'Siklus tidak ditemukan' }, { status: 404 })
+    if (cycle.rulesVersion === 2) return NextResponse.json({ error: { code: 'CLIENT_UPDATE_REQUIRED', message: 'Rotasi siklus baru disiapkan saat siklus dibuat' }, requestId: crypto.randomUUID() }, { status: 409 })
 
     // Check which members have already ordered in this cycle
     const cycleOrders = await prisma.order.findMany({
@@ -159,12 +174,17 @@ export async function POST(
   }
 }
 
-export async function DELETE(
+async function DELETEImpl(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const schemaError = await operationalSchemaGuard(prisma)
+    if (schemaError) return schemaError
     const { id } = await params
+    const cycle = await prisma.cycle.findUnique({ where: { id }, select: { rulesVersion: true } })
+    if (!cycle) return NextResponse.json({ error: 'Siklus tidak ditemukan' }, { status: 404 })
+    if (cycle.rulesVersion === 2) return NextResponse.json({ error: { code: 'CLIENT_UPDATE_REQUIRED', message: 'Rotasi siklus baru disiapkan saat siklus dibuat' }, requestId: crypto.randomUUID() }, { status: 409 })
     const { searchParams } = new URL(request.url)
     const scheduleId = searchParams.get('id')
     const memberId = searchParams.get('memberId')
@@ -192,3 +212,7 @@ export async function DELETE(
     return NextResponse.json({ error: 'Failed to delete rotation schedule' }, { status: 500 })
   }
 }
+
+export const GET = withAdmin(GETImpl)
+export const POST = withAdmin(POSTImpl)
+export const DELETE = withAdmin(DELETEImpl)

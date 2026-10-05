@@ -1,115 +1,38 @@
-import { NextResponse } from 'next/server'
+import { withAdmin } from '@/lib/auth/admin'
 import { prisma } from '@/lib/prisma'
+import { parseScaled, sumMoney } from '@/lib/domain/money'
+import { mutationErrorResponse } from '@/lib/services/mutation'
+import { NextResponse } from 'next/server'
+import { hasOperationalSchema } from '@/lib/services/schema-capabilities'
+import { getLegacyRanking } from '@/lib/services/legacy-readers'
 
-export async function GET() {
+async function GETImpl() {
   try {
-    // 1. Members Leaderboard
-    const members = await prisma.member.findMany({
-      where: { isActive: true },
-      include: {
-        group: true,
-        orders: {
-          include: {
-            items: true,
-          },
-        },
-      },
+    if (!await hasOperationalSchema(prisma)) return NextResponse.json(await getLegacyRanking(prisma))
+    const [members, groups] = await Promise.all([
+      prisma.member.findMany({ where: { isActive: true }, include: { group: true, orders: { where: { cancelledAt: null } } } }),
+      prisma.group.findMany({ where: { isActive: true, level: { in: [2, 3] } }, include: { members: { where: { isActive: true }, include: { orders: { where: { cancelledAt: null } } } } } }),
+    ])
+    const leaderboard = members.map((member) => ({
+      id: member.id, name: member.name, groupName: member.group.name,
+      orderCount: member.orders.length,
+      orderValue: sumMoney(member.orders.map((order) => order.totalAmount.toFixed(2))),
+      unknownBalanceCount: member.orders.filter((order) => !order.ledgerReconciledAt).length,
+    })).sort((a, b) => {
+      const difference = parseScaled(b.orderValue, 2, 10) - parseScaled(a.orderValue, 2, 10)
+      return difference > 0n ? 1 : difference < 0n ? -1 : a.name.localeCompare(b.name)
     })
-
-    const memberStats = members.map((m) => {
-      const orderCount = m.orders.length
-      const totalSpend = m.orders.reduce((sum, o) => sum + Number(o.totalAmount), 0)
-      const paidOrdersCount = m.orders.filter((o) => o.paymentStatus === 'paid').length
-      // Payment rate is only applicable when member actually placed orders
-      const paymentRate = orderCount > 0 ? Math.round((paidOrdersCount / orderCount) * 100) : 0
-
-      // Badges
-      const badges: string[] = []
-      if (orderCount >= 1) badges.push('🌱 Aktif')
-      if (orderCount >= 2) badges.push('🔥 Rutin')
-      if (paymentRate === 100 && orderCount > 0) badges.push('⚡ Bayar Cepat')
-      if (totalSpend >= 100000) badges.push('⭐ Loyal')
-
-      // Scaled-down Score formula (compact, eliminates excessive zeros as cycles accumulate):
-      // - 10 pts per order placed (kehadiran)
-      // - 1 pt per Rp 10.000 spent (volume belanja)
-      // - Up to 10 pts bonus for 100% payment (disiplin bayar tepat waktu)
-      const orderPts = orderCount * 10
-      const spendPts = Math.floor(totalSpend / 10000)
-      const paymentPts = Math.round(paymentRate / 10)
-      const score = orderCount > 0 ? orderPts + spendPts + paymentPts : 0
-
+    const groupStats = groups.map((group) => {
+      const activeOrderingMembers = group.members.filter((member) => member.orders.length > 0).length
       return {
-        id: m.id,
-        name: m.name,
-        phone: m.phone,
-        groupName: m.group?.name || '-',
-        role: m.role,
-        orderCount,
-        paidOrdersCount,
-        totalSpend,
-        paymentRate,
-        badges,
-        score,
+        id: group.id, name: group.name, level: group.level,
+        totalMembers: group.members.length, activeOrderingMembers,
+        participationRate: group.members.length ? Math.round(activeOrderingMembers / group.members.length * 100) : 0,
+        orderValue: sumMoney(group.members.flatMap((member) => member.orders.map((order) => order.totalAmount.toFixed(2)))),
       }
-    })
-
-    // Sort: highest score, then highest spend, then most orders, then payment rate, then name
-    memberStats.sort((a, b) => {
-      if (b.score !== a.score) return b.score - a.score
-      if (b.totalSpend !== a.totalSpend) return b.totalSpend - a.totalSpend
-      if (b.orderCount !== a.orderCount) return b.orderCount - a.orderCount
-      if (b.paymentRate !== a.paymentRate) return b.paymentRate - a.paymentRate
-      return a.name.localeCompare(b.name)
-    })
-
-    // 2. Group Rankings (includes both Level 2 Sub-groups and Level 3 Main Group)
-    const groups = await prisma.group.findMany({
-      where: { level: { in: [2, 3] }, isActive: true },
-      include: {
-        members: {
-          where: { isActive: true },
-          include: {
-            orders: true,
-          },
-        },
-      },
-    })
-
-    const groupStats = groups.map((g) => {
-      const totalMembers = g.members.length
-      const activeOrderingMembers = g.members.filter((m) => m.orders.length > 0).length
-      const totalGroupSpend = g.members.reduce(
-        (sum, m) => sum + m.orders.reduce((s, o) => s + Number(o.totalAmount), 0),
-        0
-      )
-      const participationRate =
-        totalMembers > 0 ? Math.round((activeOrderingMembers / totalMembers) * 100) : 0
-
-      return {
-        id: g.id,
-        name: g.name,
-        level: g.level,
-        totalMembers,
-        activeOrderingMembers,
-        participationRate,
-        totalGroupSpend,
-      }
-    })
-
-    groupStats.sort((a, b) => {
-      if (b.participationRate !== a.participationRate) return b.participationRate - a.participationRate
-      if (b.totalGroupSpend !== a.totalGroupSpend) return b.totalGroupSpend - a.totalGroupSpend
-      if (b.totalMembers !== a.totalMembers) return b.totalMembers - a.totalMembers
-      return a.name.localeCompare(b.name)
-    })
-
-    return NextResponse.json({
-      leaderboard: memberStats,
-      groupStats,
-    })
-  } catch (error) {
-    console.error('Error fetching rankings:', error)
-    return NextResponse.json({ error: 'Failed to fetch rankings' }, { status: 500 })
-  }
+    }).sort((a, b) => b.participationRate - a.participationRate || a.name.localeCompare(b.name))
+    return NextResponse.json({ leaderboard, groupStats })
+  } catch (error) { return mutationErrorResponse(error) }
 }
+
+export const GET = withAdmin(GETImpl)

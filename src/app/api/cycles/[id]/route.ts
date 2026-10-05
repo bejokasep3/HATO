@@ -1,12 +1,18 @@
+import { withAdmin } from '@/lib/auth/admin'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import type { Product } from '@prisma/client'
+import { getCycleSummary } from '@/lib/services/operational-summary'
+import { hasOperationalSchema } from '@/lib/services/schema-capabilities'
+import { getLegacyCycleDetail } from '@/lib/services/legacy-readers'
 
-export async function GET(
+async function GETImpl(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const { id } = await params
+    if (!await hasOperationalSchema(prisma)) return NextResponse.json(await getLegacyCycleDetail(prisma, id))
     const cycle = await prisma.cycle.findUnique({
       where: { id },
       include: {
@@ -39,25 +45,16 @@ export async function GET(
       return NextResponse.json({ error: 'Siklus tidak ditemukan' }, { status: 404 })
     }
 
-    // Sync rotation status with existing orders in this cycle
-    const orderedMemberIds = new Set(cycle.orders.map((o) => o.memberId))
+    const orderedMemberIds = new Set(cycle.orders.filter((order) => !order.cancelledAt).map((o) => o.memberId))
     for (const r of cycle.rotationSchedules) {
       if (orderedMemberIds.has(r.memberId)) {
-        if (r.status !== 'ordered') {
-          r.status = 'ordered'
-          prisma.rotationSchedule
-            .update({
-              where: { id: r.id },
-              data: { status: 'ordered' },
-            })
-            .catch(() => {})
-        }
+        r.status = 'ordered'
       }
     }
 
     // Calculate product breakdown & recap
     const productRecapMap = new Map<string, {
-      product: any
+      product: Product
       totalQuantity: number
       consumerQuantity: number
       traderQuantity: number
@@ -77,13 +74,13 @@ export async function GET(
       })
     }
 
-    for (const order of cycle.orders) {
+    for (const order of cycle.orders.filter((entry) => !entry.cancelledAt)) {
       for (const item of order.items) {
         const existing = productRecapMap.get(item.productId)
         if (existing) {
           const qty = Number(item.quantity)
           existing.totalQuantity += qty
-          if ((item as any).priceType === 'trader') {
+          if (item.priceType === 'trader') {
             existing.traderQuantity += qty
           } else {
             existing.consumerQuantity += qty
@@ -100,13 +97,15 @@ export async function GET(
       return {
         ...item,
         isMet: isTarget ? item.totalQuantity >= targetQty : true,
-        percentage: isTarget && targetQty > 0 ? Math.min(100, Math.round((item.totalQuantity / targetQty) * 100)) : 100,
+        percentage: isTarget && targetQty > 0 ? Math.round((item.totalQuantity / targetQty) * 100) : 100,
       }
     })
 
+    const operational = await getCycleSummary(prisma, id)
     return NextResponse.json({
       cycle,
       recap,
+      operational,
     })
   } catch (error) {
     console.error('Error fetching cycle detail:', error)
@@ -114,40 +113,14 @@ export async function GET(
   }
 }
 
-export async function PATCH(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+async function PATCHImpl(
+  _request: NextRequest,
+  _context: { params: Promise<{ id: string }> }
 ) {
-  try {
-    const { id } = await params
-    const body = await request.json()
-
-    const updateData: any = {}
-    if (body.label !== undefined) updateData.label = body.label
-    if (body.status !== undefined) updateData.status = body.status
-    if (body.notes !== undefined) updateData.notes = body.notes
-    if (body.periodStart !== undefined) updateData.periodStart = new Date(body.periodStart)
-    if (body.orderDeadline !== undefined) updateData.orderDeadline = new Date(body.orderDeadline)
-    if (body.deliveryDate !== undefined) updateData.deliveryDate = new Date(body.deliveryDate)
-
-    if (body.status === 'open') {
-      await prisma.cycle.updateMany({
-        where: {
-          id: { not: id },
-          status: 'open',
-        },
-        data: { status: 'completed' },
-      })
-    }
-
-    const updated = await prisma.cycle.update({
-      where: { id },
-      data: updateData,
-    })
-
-    return NextResponse.json(updated)
-  } catch (error) {
-    console.error('Error updating cycle:', error)
-    return NextResponse.json({ error: 'Failed to update cycle' }, { status: 500 })
-  }
+  void _request
+  void _context
+  return NextResponse.json({ error: { code: 'CLIENT_UPDATE_REQUIRED', message: 'Gunakan aksi buka, tutup, atau ubah target siklus' }, requestId: crypto.randomUUID() }, { status: 409 })
 }
+
+export const GET = withAdmin(GETImpl)
+export const PATCH = withAdmin(PATCHImpl)
