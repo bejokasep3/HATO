@@ -1,5 +1,5 @@
 import { type PrismaClient } from '@prisma/client'
-import { canIncreaseOrder, needsConfirmedRecap } from '../domain/calendar'
+import { canRecordOrder, cycleTiming, needsRecapForOrderEntry } from '../domain/calendar'
 import { lineSubtotal, parseScaled, sumMoney } from '../domain/money'
 import { getCycleAvailability } from './availability'
 import { ServiceError, lockCycle, runIdempotent } from './mutation'
@@ -26,14 +26,15 @@ export async function createOrder(prisma: PrismaClient, input: {
   }, async (tx) => {
     await lockCycle(tx, input.cycleId)
     const cycle = await tx.cycle.findUnique({ where: { id: input.cycleId }, include: { supplierRecap: { select: { id: true } } } })
-    if (!cycle || cycle.rulesVersion !== 2 || cycle.periodState !== 'open') {
+    if (!cycle || cycle.rulesVersion !== 2 || !['draft', 'open'].includes(cycle.periodState ?? '')) {
       throw new ServiceError(409, 'CYCLE_NOT_OPEN', 'Siklus ini tidak menerima pesanan baru')
     }
     const periodStart = cycle.periodStart.toISOString().slice(0, 10)
-    if (!canIncreaseOrder(periodStart, 'open', now)) {
-      throw new ServiceError(409, 'ORDER_WINDOW_CLOSED', 'Pemesanan minggu ini sudah ditutup')
+    if (!canRecordOrder(periodStart, cycle.periodState, now)) {
+      throw new ServiceError(409, 'ORDER_WINDOW_CLOSED', 'Siklus belum dimulai atau ditutup manual')
     }
-    if (needsConfirmedRecap(periodStart, Boolean(cycle.supplierRecap), now)) {
+    const pricingPending = cycle.periodState === 'draft'
+    if (!pricingPending && needsRecapForOrderEntry(periodStart, Boolean(cycle.supplierRecap), now)) {
       throw new ServiceError(409, 'RECAP_REQUIRED', 'Rekap supplier harus dikonfirmasi sebelum menerima pesanan tambahan')
     }
     const member = await tx.member.findUnique({ where: { id: input.memberId }, select: { isActive: true } })
@@ -51,9 +52,9 @@ export async function createOrder(prisma: PrismaClient, input: {
       try { parseScaled(item.quantity, price.quantityScaleSnapshot as 0 | 2, 8, false) }
       catch { throw new ServiceError(400, 'INVALID_QUANTITY', 'Jumlah produk tidak sesuai satuan', { productId: item.productId }) }
       const selected = item.priceType === 'trader' ? (price.traderPrice ?? price.consumerPrice ?? price.price) : (price.consumerPrice ?? price.price)
-      if (selected.lte(0)) throw new ServiceError(422, 'PRICE_NOT_READY', 'Harga produk belum diisi', { productId: item.productId })
-      const unitPrice = selected.toFixed(2)
-      return { ...item, unitPrice, subtotal: lineSubtotal(unitPrice, item.quantity) }
+      if (!pricingPending && selected.lte(0)) throw new ServiceError(422, 'PRICE_NOT_READY', 'Harga produk belum diisi', { productId: item.productId })
+      const unitPrice = pricingPending ? '0.00' : selected.toFixed(2)
+      return { ...item, unitPrice, subtotal: pricingPending ? '0.00' : lineSubtotal(unitPrice, item.quantity) }
     })
 
     if (cycle.supplierRecap) {
@@ -81,8 +82,8 @@ export async function createOrder(prisma: PrismaClient, input: {
         paymentStatus: 'unpaid',
         orderStatus: 'pending',
         createdBy: input.actorId,
-        ledgerReconciledAt: now,
-        ledgerReconciledBy: input.actorId,
+        ledgerReconciledAt: pricingPending ? null : now,
+        ledgerReconciledBy: pricingPending ? null : input.actorId,
         items: { create: orderItems.map((item) => ({
           productId: item.productId, priceType: item.priceType, quantity: item.quantity,
           unitPrice: item.unitPrice, subtotal: item.subtotal,
@@ -93,12 +94,13 @@ export async function createOrder(prisma: PrismaClient, input: {
     await tx.cycle.update({ where: { id: input.cycleId }, data: { version: { increment: 1 } } })
     await tx.auditEvent.create({ data: {
       actorId: input.actorId, entityType: 'order', entityId: created.id, action: 'created',
-      after: { cycleId: input.cycleId, totalAmount, itemCount: created.items.length },
+      after: { cycleId: input.cycleId, totalAmount, itemCount: created.items.length, recordedAfterEnd: cycleTiming({ periodStart }, now).calendarStatus === 'ended' },
     } })
     return { status: 201, body: {
       id: created.id, cycleId: created.cycleId, memberId: created.memberId, version: created.version,
       totalAmount: created.totalAmount.toFixed(2),
-      paymentSummary: { status: 'unpaid', paidAmount: '0.00', outstandingAmount: created.totalAmount.toFixed(2) },
+      pricingPending,
+      paymentSummary: pricingPending ? { status: 'unverified', paidAmount: null, outstandingAmount: null } : { status: 'unpaid', paidAmount: '0.00', outstandingAmount: created.totalAmount.toFixed(2) },
       cancelledAt: null,
       items: created.items.map((item) => ({
         id: item.id, productId: item.productId, priceType: item.priceType,

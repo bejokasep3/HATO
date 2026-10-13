@@ -16,6 +16,7 @@ export const createCycleSchema = z.object({
     'Target AYAM dan TAHU harus diisi tepat sekali',
   ),
   notes: z.string().trim().max(2000).nullable().optional(),
+  copyPreviousPrices: z.boolean().optional(),
 })
 
 export const changeTargetsSchema = z.object({

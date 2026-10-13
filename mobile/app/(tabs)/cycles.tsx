@@ -3,10 +3,13 @@ import { View, Text, StyleSheet, FlatList, RefreshControl, TouchableOpacity, Act
 import { useRouter } from 'expo-router';
 import { getCycles } from '@/lib/api';
 import { Cycle } from '@/lib/types';
-import { formatDate, getStatusColor, getStatusLabel } from '@/lib/utils';
+import { formatDate } from '@/lib/utils';
+import { cycleTiming, cycleStatusLabel } from '../../../src/lib/domain/calendar';
+import { useBusinessTime } from '../../../shared/use-business-time';
 
 export default function CyclesScreen() {
   const [cycles, setCycles] = useState<Cycle[]>([]);
+  const now = useBusinessTime(cycles[0]?.evaluatedAt);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const router = useRouter();
@@ -39,8 +42,8 @@ export default function CyclesScreen() {
     >
       <View style={styles.cardHeader}>
         <Text style={styles.cardTitle}>{item.label}</Text>
-        <View style={[styles.badge, { backgroundColor: getStatusColor(item.status).bg }]}>
-          <Text style={[styles.badgeText, { color: getStatusColor(item.status).text }]}>{getStatusLabel(item.status)}</Text>
+        <View style={[styles.badge, { backgroundColor: '#f1f5f9' }]}>
+          <Text style={[styles.badgeText, { color: '#334155' }]}>{cycleStatusLabel(cycleTiming(item, now).effectiveStatus)}</Text>
         </View>
       </View>
       <Text style={styles.dateText}>
@@ -78,8 +81,8 @@ const styles = StyleSheet.create({
   centerContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   listContent: { padding: 16 },
   card: { backgroundColor: '#ffffff', padding: 16, borderRadius: 12, marginBottom: 12, borderWidth: 1, borderColor: '#e2e8f0' },
-  cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
-  cardTitle: { fontSize: 16, fontWeight: 'bold', color: '#1e293b' },
+  cardHeader: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
+  cardTitle: { flexShrink: 1, fontSize: 16, fontWeight: 'bold', color: '#1e293b' },
   badge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 12 },
   badgeText: { fontSize: 12, fontWeight: 'bold', color: '#ffffff' },
   dateText: { fontSize: 14, color: '#64748b' },

@@ -103,7 +103,7 @@ async function GETImpl(
 
     const operational = await getCycleSummary(prisma, id)
     return NextResponse.json({
-      cycle,
+      cycle: { ...cycle, evaluatedAt: operational.cycle.evaluatedAt, effectiveStatus: operational.cycle.effectiveStatus, calendarStatus: operational.cycle.calendarStatus },
       recap,
       operational,
     })

@@ -11,9 +11,12 @@ import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { Modal } from '@/components/ui/Modal'
 import { useOperationalMode } from '@/components/AppShell'
+import { cycleTiming, cycleStatusLabel } from '@/lib/domain/calendar'
+import { useBusinessTime } from '../../../../shared/use-business-time'
 
 type Operational = {
   cycle: {
+    evaluatedAt?: string
     id: string; label: string; periodStart: string; periodEnd: string | null; supplierDeadline: string | null
     deliveryDate: string; periodState: 'draft' | 'open' | 'closed' | null; version: number; rulesVersion: number
     notes?: string | null; recapConfirmedAt: string | null; receiptStatus: string
@@ -57,6 +60,7 @@ export default function CycleDetailPage() {
   const params = useParams<{ id: string }>()
   const cycleId = params.id
   const [detail, setDetail] = useState<Operational | null>(null)
+  const now = useBusinessTime(detail?.cycle.evaluatedAt)
   const [prices, setPrices] = useState<PriceRow[]>([])
   const [priceInputs, setPriceInputs] = useState<Record<string, { consumer: string; trader: string }>>({})
   const [recap, setRecap] = useState<RecapResponse | null>(null)
@@ -184,13 +188,18 @@ export default function CycleDetailPage() {
   if (error || !detail) return <div className="mx-auto mt-12 max-w-lg text-center"><AlertTriangle className="mx-auto h-8 w-8 text-rose-700" /><h1 className="mt-3 text-xl font-black">Siklus tidak dapat dimuat</h1><p className="mt-2 text-sm text-slate-600">{error}</p><Button className="mt-5" onClick={() => void load()} icon={<RefreshCw className="h-4 w-4" />}>Coba lagi</Button></div>
 
   const cycle = detail.cycle
+  const timing = cycleTiming(cycle, now)
   const editable = canMutate && cycle.periodState !== 'closed'
 
   return (
     <div className="mx-auto max-w-7xl space-y-7">
       <header className="border-b border-slate-200 pb-5">
         <Link href={`/?cycleId=${cycle.id}`} className="inline-flex items-center gap-1 text-sm font-bold text-emerald-800"><ArrowLeft className="h-4 w-4" /> Minggu ini</Link>
-        <div className="mt-3 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between"><div><div className="flex flex-wrap items-center gap-2"><h1 className="text-2xl font-black tracking-tight text-slate-950 sm:text-3xl">{cycle.label}</h1><Badge variant={cycle.periodState === 'open' ? 'emerald' : cycle.periodState === 'draft' ? 'amber' : 'slate'} dot>{cycle.periodState ?? 'histori'}</Badge></div><p className="mt-2 text-sm text-slate-600">{formatDate(cycle.periodStart)} sampai {formatDate(cycle.periodEnd ?? cycle.deliveryDate)} · versi {cycle.version}</p></div><div className="flex gap-2">{cycle.periodState === 'draft' ? <Button disabled={Boolean(saving) || !canMutate} onClick={() => void runAction('open', `/api/cycles/${cycle.id}/open`, { expectedVersion: cycle.version })}>Buka siklus</Button> : null}{cycle.periodState === 'open' ? <Button variant="secondary" disabled={Boolean(saving) || !canMutate} onClick={() => setCloseModal(true)}>Tutup siklus</Button> : null}</div></div>
+        <div className="mt-3 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+          <div><div className="flex flex-wrap items-center gap-2"><h1 className="text-2xl font-black tracking-tight text-slate-950 sm:text-3xl">{cycle.label}</h1><Badge variant={timing.calendarStatus === 'current' ? 'emerald' : 'slate'} dot>{cycleStatusLabel(timing.effectiveStatus)}</Badge></div><p className="mt-2 text-sm text-slate-600">{formatDate(cycle.periodStart)} sampai {formatDate(cycle.periodEnd ?? cycle.deliveryDate)} · versi {cycle.version}</p></div>
+          <div className="flex flex-wrap gap-2">{cycle.periodState === 'draft' ? <Button disabled={Boolean(saving) || !canMutate} onClick={() => void runAction('open', `/api/cycles/${cycle.id}/open`, { expectedVersion: cycle.version })}>{timing.calendarStatus === 'ended' ? 'Kunci harga & hitung tagihan' : 'Kunci harga & buka minggu'}</Button> : null}{cycle.periodState === 'open' && timing.calendarStatus === 'current' ? <Button variant="secondary" disabled={Boolean(saving) || !canMutate} onClick={() => setCloseModal(true)}>Tutup siklus</Button> : null}</div>
+        </div>
+        {timing.calendarStatus !== 'current' ? <p className="mt-3 text-sm text-slate-700">{timing.calendarStatus === 'ended' ? 'Periode sudah berakhir. Data pesanan yang tertinggal tetap dapat dicatat atau dikoreksi selama siklus belum ditutup manual.' : 'Pesanan dapat dicatat mulai Senin pukul 00.00 WIB.'}</p> : null}
       </header>
 
       <section aria-labelledby="target-title">
@@ -199,7 +208,7 @@ export default function CycleDetailPage() {
       </section>
 
       {cycle.periodState === 'draft' ? (
-        <section aria-labelledby="price-title"><div><h2 id="price-title" className="text-lg font-extrabold text-slate-950">Harga minggu ini</h2><p className="mt-1 text-sm text-slate-600">Harga dikunci setelah siklus dibuka. Semua produk aktif harus memiliki harga lebih dari nol.</p></div><form onSubmit={savePrices} className="mt-4 overflow-hidden rounded-xl border border-slate-200 bg-white"><div className="hidden grid-cols-[1fr_160px_160px] gap-3 border-b border-slate-200 bg-slate-50 px-4 py-2 text-xs font-bold text-slate-600 @3xl:grid"><span>Produk</span><span>Konsumen</span><span>Pedagang</span></div>{prices.map((price) => <div key={price.productId} className="grid gap-3 border-t border-slate-100 p-4 first:border-t-0 @3xl:grid-cols-[minmax(0,1fr)_160px_160px] sm:items-center"><div><p className="text-sm font-bold text-slate-900">{price.product.name}</p><p className="text-xs text-slate-500">per {price.product.unit}</p></div><label className="text-xs font-semibold text-slate-600 @3xl:text-transparent">Harga konsumen<input disabled={!canMutate} aria-label={`Harga konsumen ${price.product.name}`} inputMode="numeric" required value={priceInputs[price.productId]?.consumer ?? ''} onChange={(event) => setPriceInputs((current) => ({ ...current, [price.productId]: { ...current[price.productId], consumer: event.target.value } }))} className="mt-1 min-h-10 w-full rounded-lg border border-slate-300 px-3 text-sm tabular-nums text-slate-900" /></label><label className="text-xs font-semibold text-slate-600 @3xl:text-transparent">Harga pedagang<input disabled={!canMutate} aria-label={`Harga pedagang ${price.product.name}`} inputMode="numeric" required value={priceInputs[price.productId]?.trader ?? ''} onChange={(event) => setPriceInputs((current) => ({ ...current, [price.productId]: { ...current[price.productId], trader: event.target.value } }))} className="mt-1 min-h-10 w-full rounded-lg border border-slate-300 px-3 text-sm tabular-nums text-slate-900" /></label></div>)}<div className="flex justify-end border-t border-slate-200 p-4"><Button type="submit" disabled={!canMutate || Boolean(saving)} icon={<Save className="h-4 w-4" />}>{saving === 'prices' ? 'Menyimpan…' : 'Simpan harga'}</Button></div></form></section>
+        <section aria-labelledby="price-title"><Link href={`/orders?cycleId=${cycleId}&new=1`} className="mb-4 inline-flex min-h-11 items-center text-sm font-bold text-emerald-800 underline underline-offset-4">Catat pesanan, harga menyusul</Link><div><h2 id="price-title" className="text-lg font-extrabold text-slate-950">Harga minggu ini</h2><p className="mt-1 text-sm text-slate-600">Pesanan dapat dicatat sebelum harga diisi. Simpan harga, lalu kunci harga & buka minggu untuk menghitung semua tagihan. Semua produk aktif memerlukan harga lebih dari nol.</p></div><form onSubmit={savePrices} className="mt-4 overflow-hidden rounded-xl border border-slate-200 bg-white"><div className="hidden grid-cols-[1fr_160px_160px] gap-3 border-b border-slate-200 bg-slate-50 px-4 py-2 text-xs font-bold text-slate-600 @3xl:grid"><span>Produk</span><span>Konsumen</span><span>Pedagang</span></div>{prices.map((price) => <div key={price.productId} className="grid gap-3 border-t border-slate-100 p-4 first:border-t-0 @3xl:grid-cols-[minmax(0,1fr)_160px_160px] sm:items-center"><div><p className="text-sm font-bold text-slate-900">{price.product.name}</p><p className="text-xs text-slate-500">per {price.product.unit}</p></div><label className="text-xs font-semibold text-slate-600 @3xl:text-transparent">Harga konsumen<input disabled={!canMutate} aria-label={`Harga konsumen ${price.product.name}`} inputMode="numeric" required value={priceInputs[price.productId]?.consumer ?? ''} onChange={(event) => setPriceInputs((current) => ({ ...current, [price.productId]: { ...current[price.productId], consumer: event.target.value } }))} className="mt-1 min-h-10 w-full rounded-lg border border-slate-300 px-3 text-sm tabular-nums text-slate-900" /></label><label className="text-xs font-semibold text-slate-600 @3xl:text-transparent">Harga pedagang<input disabled={!canMutate} aria-label={`Harga pedagang ${price.product.name}`} inputMode="numeric" required value={priceInputs[price.productId]?.trader ?? ''} onChange={(event) => setPriceInputs((current) => ({ ...current, [price.productId]: { ...current[price.productId], trader: event.target.value } }))} className="mt-1 min-h-10 w-full rounded-lg border border-slate-300 px-3 text-sm tabular-nums text-slate-900" /></label></div>)}<div className="flex justify-end border-t border-slate-200 p-4"><Button type="submit" disabled={!canMutate || Boolean(saving)} icon={<Save className="h-4 w-4" />}>{saving === 'prices' ? 'Menyimpan…' : 'Simpan harga'}</Button></div></form></section>
       ) : null}
 
       <section aria-labelledby="recap-title">

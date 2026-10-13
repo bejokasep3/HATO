@@ -8,6 +8,7 @@ import { paymentSummary } from '@/lib/domain/payments'
 import { sumMoney } from '@/lib/domain/money'
 import { hasOperationalSchema, operationalSchemaGuard } from '@/lib/services/schema-capabilities'
 import { getLegacyCycles } from '@/lib/services/legacy-readers'
+import { cycleTiming } from '@/lib/domain/calendar'
 
 async function GETImpl() {
   try {
@@ -32,6 +33,7 @@ async function GETImpl() {
       orderBy: { periodStart: 'desc' },
     })
 
+    const now = new Date()
     const formatted = cycles.map((c) => {
       const orderValue = sumMoney(c.orders.map((order) => order.totalAmount.toFixed(2)))
       const summaries = c.orders.map((order) => paymentSummary(
@@ -44,6 +46,7 @@ async function GETImpl() {
       const knownOutstanding = sumMoney(verified.map((summary) => summary.outstandingAmount!))
 
       return {
+        ...cycleTiming({ periodStart: c.periodStart.toISOString(), periodEnd: c.periodEnd?.toISOString(), periodState: c.periodState, status: c.status }, now),
         id: c.id,
         label: c.label,
         periodStart: c.periodStart,

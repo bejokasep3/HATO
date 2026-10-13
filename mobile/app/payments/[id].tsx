@@ -155,7 +155,7 @@ export default function PaymentDetailScreen() {
         </View>
 
         <View style={styles.balance}>
-          <Balance label="Nilai pesanan" value={formatCurrency(data.totalAmount)} />
+          <Balance label="Nilai pesanan" value={data.pricingPending ? 'Menunggu harga' : formatCurrency(data.totalAmount)} />
           <Balance label="Sudah dibayar" value={data.summary.paidAmount === null ? 'Belum diketahui' : formatCurrency(data.summary.paidAmount)} success />
           <Balance label="Sisa" value={data.summary.outstandingAmount === null ? 'Belum diketahui' : formatCurrency(data.summary.outstandingAmount)} danger />
         </View>
@@ -165,7 +165,7 @@ export default function PaymentDetailScreen() {
         {error ? <View style={styles.errorBox}><Text style={styles.errorText}>{error}</Text></View> : null}
         {success ? <View style={styles.successBox}><Text style={styles.successText}>{success}</Text></View> : null}
         {data.summary.status === 'paid' ? <View style={styles.successBox}><Text style={styles.successTitle}>Lunas</Text><Text style={styles.successText}>Tidak ada sisa yang perlu dibayar.</Text></View> : null}
-        {data.summary.status === 'unverified' ? <View style={styles.warningBox}><Text style={styles.warningText}>Saldo awal pesanan lama ini harus diverifikasi sebelum pembayaran baru dicatat.</Text></View> : null}
+        {data.summary.status === 'unverified' ? <View style={styles.warningBox}><Text style={styles.warningText}>{data.pricingPending ? 'Isi dan kunci harga minggu ini sebelum mencatat pembayaran.' : 'Saldo awal pesanan lama ini harus diverifikasi sebelum pembayaran baru dicatat.'}</Text></View> : null}
         {data.cancelledAt ? <View style={styles.errorBox}><Text style={styles.errorText}>Pesanan dibatalkan. Pembayaran baru tidak dapat dicatat.</Text></View> : null}
 
         {canPay ? <View style={styles.section}>

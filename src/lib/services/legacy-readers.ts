@@ -1,5 +1,5 @@
 import { type PrismaClient } from '@prisma/client'
-import { addCalendarDays } from '../domain/calendar'
+import { addCalendarDays, cycleTiming } from '../domain/calendar'
 import { getLegacyDashboardSummary } from './legacy-dashboard'
 
 const decimal = (value: { toFixed(digits: number): string } | null | undefined) => value?.toFixed(2) ?? '0.00'
@@ -41,6 +41,7 @@ export async function getLegacyCycles(prisma: PrismaClient) {
       return target?.targetQuantity ? [{ groupCode: code, quantity: decimal(target.targetQuantity), unit: code === 'AYAM' ? 'kg' : 'bungkus' }] : []
     })
     return {
+      ...cycleTiming({ periodStart: start, periodState: phase(cycle.status) }, new Date()),
       id: cycle.id, label: cycle.label, periodStart: start, orderDeadline: date(cycle.orderDeadline),
       periodEnd: addCalendarDays(start, 6), supplierDeadline: addCalendarDays(start, 1),
       deliveryDate: date(cycle.deliveryDate), periodState: phase(cycle.status), status: cycle.status,

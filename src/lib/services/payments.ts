@@ -6,7 +6,8 @@ import { ServiceError, runIdempotent, type Tx } from './mutation'
 async function lockOrder(tx: Tx, orderId: string) {
   const rows = await tx.$queryRaw<{ id: string }[]>`SELECT id FROM orders WHERE id = ${orderId}::uuid FOR UPDATE`
   if (!rows.length) throw new ServiceError(404, 'ORDER_NOT_FOUND', 'Pesanan tidak ditemukan')
-  const order = await tx.order.findUniqueOrThrow({ where: { id: orderId }, include: { payments: true } })
+  const order = await tx.order.findUniqueOrThrow({ where: { id: orderId }, include: { payments: true, cycle: { select: { periodState: true, rulesVersion: true } } } })
+  if (order.cycle.rulesVersion === 2 && order.cycle.periodState === 'draft') throw new ServiceError(409, 'PRICES_NOT_READY', 'Isi dan kunci harga sebelum mencatat pembayaran')
   if (!order.ledgerReconciledAt) throw new ServiceError(409, 'LEDGER_RECONCILIATION_REQUIRED', 'Saldo pesanan lama belum diverifikasi')
   return order
 }
@@ -21,12 +22,13 @@ export async function getOrderPayments(prisma: PrismaClient, orderId: string) {
     include: {
       payments: { orderBy: { createdAt: 'asc' } },
       member: { include: { group: true } },
-      cycle: { select: { id: true, label: true } },
+      cycle: { select: { id: true, label: true, periodState: true, rulesVersion: true } },
     },
   })
   if (!order) throw new ServiceError(404, 'ORDER_NOT_FOUND', 'Pesanan tidak ditemukan')
   return {
     orderId,
+    pricingPending: order.cycle.rulesVersion === 2 && order.cycle.periodState === 'draft',
     orderStatus: order.orderStatus,
     cancelledAt: order.cancelledAt?.toISOString() ?? null,
     version: order.version,

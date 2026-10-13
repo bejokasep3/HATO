@@ -1,4 +1,5 @@
 export interface Cycle {
+  evaluatedAt?: string;
   id: string;
   label: string;
   status: string;
@@ -62,6 +63,7 @@ export interface OrderItem {
 }
 
 export interface Order {
+  pricingPending?: boolean;
   id: string;
   cycleId: string;
   memberId: string;
@@ -114,6 +116,7 @@ export interface TargetItem {
 }
 
 export interface DashboardData {
+  evaluatedAt?: string;
   hasCycle: boolean;
   allCycles: Cycle[];
   currentCycle: Cycle | null;
@@ -191,6 +194,7 @@ export interface PaymentRecord {
 }
 
 export interface OrderPaymentsResponse {
+  pricingPending?: boolean;
   orderId: string;
   orderStatus: string;
   cancelledAt: string | null;

@@ -1,5 +1,11 @@
 # Status implementasi
 
+Verifikasi pra-push 13 Oktober 2026: clean candidate lulus frozen-lockfile install, full web build, TypeScript native, 38 tes domain/kontrak/integrasi, dan export iOS/Android/web. Rollback Ranking/Laporan terkonfirmasi; artefak redesign ditolak dikeluarkan dari candidate. Review branch masih reviewable, bukan siap rilis produksi: database terhubung masih schema lama dan kontrak tab Ranking/Laporan yang dipulihkan belum cocok dengan schema operasional. Bukti: `evidence/2026-10-13-prepush.md`. Belum commit/push/deploy.
+
+Pembaruan kalender 13 Oktober 2026: status waktu **Akan datang / Minggu ini / Berakhir** dihitung otomatis memakai WIB pada API dan web/mobile, dengan pembaruan layar setiap 15 detik. Dashboard default tidak lagi memilih minggu lama saat minggu baru belum dibuat. Periode berakhir tidak menghapus piutang atau menandai pengiriman selesai. Bukti: `evidence/2026-10-13-cycle-calendar.md`. Belum push/deploy.
+
+Pembaruan 13 Oktober 2026: alur manual **Mulai minggu ini** ditambahkan pada web/mobile. Target diisi saat mulai; pesanan dapat dicatat sebagai jumlah tanpa harga pada minggu draf. Harga diisi kemudian dan seluruh tagihan dihitung atomik saat **Kunci harga & buka minggu**. Cron tetap nonaktif. Bukti dan batas pengujian: `evidence/2026-10-13-week-start.md`. Belum push/deploy; blocker produksi sebelumnya tetap berlaku.
+
 Status kerja 30 September 2026: kandidat lokal reviewable dengan blocker eksplisit. Evidence T00-T04 di bawah adalah hasil sesi implementasi, bukan hasil review awal. Tidak ada deploy atau migrasi produksi.
 
 Pembaruan 5 Oktober 2026: kandidat kode `106ae2c` pada branch `codex/hato-v2-review` lulus install frozen-lockfile, full `pnpm build` dari clone bersih (Next.js 16.3.8), typecheck web/mobile, 20/20 contract/domain tests, serta export iOS/Android/web (Expo 57.0.26). Lint tanpa error, tetapi masih ada 60 warning web/server pada file yang berubah dan 23 warning mobile. Build/commit bersih bukan lagi blocker; blocker data/auth/perangkat tetap terbuka. Bukti terkini: `evidence/2026-10-05-review-push.md`. Bukti browser 4 Oktober hanya mencakup scope Dashboard/Orders yang tercatat pada `anti-slop/fix-003-2026-10-04.md` dan `anti-slop/fix-004-2026-10-04.md`.
@@ -26,6 +32,10 @@ Pembaruan 5 Oktober 2026: kandidat kode `106ae2c` pada branch `codex/hato-v2-rev
 | T17 | REVIEWABLE | `evidence/T17-release-candidate.md`, `release-runbook.md` | Tahan deploy sampai mapping, clone/reconciliation, auth nyata, visual web, dan dua perangkat lulus |
 
 ## Resume checkpoint
+
+- 14 October: operational Ranking/Reports compatibility repaired while retaining restored layouts; 43 tests plus web build/native exports passed. Production application-data backup restored and migrated on a local clone with all original table contents preserved. Catalog mapping approved and tested on the clone. Password, historical payment attestation, hosted authorization and device acceptance remain pending. Latest evidence: `evidence/2026-10-14-release-preparation.md`.
+
+- 13 October follow-up: ended operational weeks now allow manager late entry and pending-order corrections while retaining `Berakhir`; manually closed weeks remain locked. See `evidence/2026-10-13-ended-week-entry.md` for fresh checks and the pending Auth password change. Earlier pre-push evidence predates this behavior change.
 
 - Task/substep saat ini: T17 kandidat rilis lokal sudah reviewable; deployment ditahan oleh blocker data/auth/perangkat yang tercatat.
 - Files changed oleh implementasi: `shared/contracts`, `src/lib/domain`, `src/lib/auth`, `src/lib/supabase`, `src/proxy.ts`, route guards, login web/native, mobile API/adapters, manifests/lockfiles dan docs evidence. Perubahan cycles/page, cron automation, vercel dan PDF yang sudah ada saat T00 tetap dipertahankan; endpoint cron existing WIP kini fail-closed dan no-op.

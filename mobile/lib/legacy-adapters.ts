@@ -25,6 +25,7 @@ export function parseOrders(value: unknown): Order[] {
     id: order.id, cycleId: order.cycleId, memberId: order.memberId,
     memberName: order.member?.name || 'Anggota', groupName: order.member?.group?.name,
     totalAmount: Number(order.totalAmount), paymentStatus: order.paymentStatus,
+    pricingPending: order.pricingPending === true,
     orderStatus: order.orderStatus, createdAt: order.createdAt,
   }));
 }
@@ -61,6 +62,7 @@ export function parseCycleDetail(value: unknown): CycleDetail {
     deliveryDate: cycle.deliveryDate,
     periodEnd: cycle.periodEnd, supplierDeadline: cycle.supplierDeadline,
     periodState: cycle.periodState, version: cycle.version, rulesVersion: cycle.rulesVersion,
+    evaluatedAt: cycle.evaluatedAt,
     weeklyPrices: parsePrices(cycle.weeklyPrices),
     rotation: parseRotations(cycle.rotationSchedules),
     orders: parseOrders(cycle.orders),

@@ -11,8 +11,12 @@ import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { Modal } from '@/components/ui/Modal'
 import { useOperationalMode } from '@/components/AppShell'
+import { StartWeekButton } from '@/components/StartWeekButton'
+import { currentWeekStart, cycleTiming, cycleStatusLabel } from '@/lib/domain/calendar'
+import { useBusinessTime } from '../../../shared/use-business-time'
 
 type CycleItem = {
+  evaluatedAt?: string
   id: string
   label: string
   periodStart: string
@@ -32,25 +36,8 @@ type CycleItem = {
   targets: Array<{ groupCode: 'AYAM' | 'TAHU'; quantity: string; unit: string }>
 }
 
-function phaseLabel(value: CycleItem['periodState']) {
-  if (value === 'draft') return 'Draf'
-  if (value === 'open') return 'Dibuka'
-  if (value === 'closed') return 'Ditutup'
-  return 'Histori'
-}
-
-function dateInput(date: Date) {
-  const year = date.getFullYear()
-  const month = String(date.getMonth() + 1).padStart(2, '0')
-  const day = String(date.getDate()).padStart(2, '0')
-  return `${year}-${month}-${day}`
-}
-
 function nextMonday() {
-  const date = new Date()
-  const distance = (8 - date.getDay()) % 7
-  date.setDate(date.getDate() + distance)
-  return dateInput(date)
+  return currentWeekStart(new Date())
 }
 
 export default function CyclesPage() {
@@ -58,6 +45,7 @@ export default function CyclesPage() {
   const { operationalSchema } = useOperationalMode()
   const canMutate = operationalSchema === true
   const [cycles, setCycles] = useState<CycleItem[]>([])
+  const now = useBusinessTime(cycles[0]?.evaluatedAt)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [open, setOpen] = useState(false)
@@ -88,6 +76,7 @@ export default function CyclesPage() {
     try {
       const body = {
         periodStart,
+        copyPreviousPrices: false,
         targets: [
           { groupCode: 'AYAM', quantity: Number(ayamTarget).toFixed(2) },
           { groupCode: 'TAHU', quantity: Number(tahuTarget).toFixed(2) },
@@ -98,7 +87,7 @@ export default function CyclesPage() {
       if (pendingAttempt.current?.signature !== signature) pendingAttempt.current = { signature, key: newIdempotencyKey() }
       const cycle = await apiPost<CycleItem>('/api/cycles', body, { idempotencyKey: pendingAttempt.current.key })
       pendingAttempt.current = null
-      toast.success('Siklus draf dibuat. Periksa harga sebelum membukanya.')
+      toast.success('Minggu dibuat. Pesanan dapat dicatat, harga menyusul.')
       setOpen(false)
       router.push(`/cycles/${cycle.id}?cycleId=${cycle.id}`)
     } catch (cause) {
@@ -110,7 +99,7 @@ export default function CyclesPage() {
     <div className="mx-auto max-w-7xl space-y-6">
       <header className="flex flex-col gap-4 border-b border-slate-200 pb-5 sm:flex-row sm:items-end sm:justify-between">
         <div><p className="text-xs font-bold text-emerald-800">Periode kerja</p><h1 className="mt-1 text-2xl font-black tracking-tight text-slate-950 sm:text-3xl">Siklus mingguan</h1><p className="mt-2 max-w-2xl text-sm text-slate-600">Setiap siklus berjalan Senin–Minggu, direkap Selasa, dan menerima barang Kamis.</p></div>
-        <Button onClick={() => setOpen(true)} disabled={!canMutate} icon={<Plus className="h-4 w-4" />}>Buat siklus</Button>
+        <div className="flex flex-wrap gap-2"><StartWeekButton /><Button onClick={() => setOpen(true)} disabled={!canMutate} icon={<Plus className="h-4 w-4" />}>Jadwalkan minggu lain</Button></div>
       </header>
 
       {error ? <div className="flex items-center justify-between gap-3 rounded-lg bg-rose-50 p-3 text-sm text-rose-900" role="alert"><span className="flex items-center gap-2"><AlertTriangle className="h-4 w-4" />{error}</span><Button size="sm" variant="ghost" onClick={() => void load()} icon={<RefreshCw className="h-4 w-4" />}>Coba lagi</Button></div> : null}
@@ -124,20 +113,24 @@ export default function CyclesPage() {
       {!loading && cycles.length > 0 ? (
         <div className="grid gap-4 md:grid-cols-2">
           {cycles.map((cycle) => {
+            const timing = cycleTiming(cycle, now)
             const ayam = cycle.targets.find((target) => target.groupCode === 'AYAM')
             const tahu = cycle.targets.find((target) => target.groupCode === 'TAHU')
             return (
               <article key={cycle.id} className="flex flex-col justify-between rounded-xl border border-slate-200 bg-white p-5">
                 <div>
-                  <div className="flex items-start justify-between gap-3"><div><h2 className="text-lg font-extrabold text-slate-950">{cycle.label}</h2><p className="mt-1 text-xs text-slate-500">{formatDate(cycle.periodStart)}–{formatDate(cycle.periodEnd ?? cycle.deliveryDate)}</p></div><Badge variant={cycle.periodState === 'open' ? 'emerald' : cycle.periodState === 'draft' ? 'amber' : 'slate'} dot>{phaseLabel(cycle.periodState)}</Badge></div>
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div><h2 className="text-lg font-extrabold text-slate-950">{cycle.label}</h2><p className="mt-1 text-xs text-slate-500">{formatDate(cycle.periodStart)}–{formatDate(cycle.periodEnd ?? cycle.deliveryDate)}</p></div>
+                    <Badge variant={timing.calendarStatus === 'current' ? 'emerald' : 'slate'} dot>{cycleStatusLabel(timing.effectiveStatus)}</Badge>
+                  </div>
                   <dl className="mt-5 grid grid-cols-2 gap-x-5 gap-y-4 border-y border-slate-200 py-4 text-sm">
                     <div><dt className="text-xs font-semibold text-slate-500">Target ayam</dt><dd className="mt-1 font-extrabold tabular-nums text-slate-900">{ayam ? `${Number(ayam.quantity).toLocaleString('id-ID')} ${ayam.unit}` : 'Belum diketahui'}</dd></div>
                     <div><dt className="text-xs font-semibold text-slate-500">Target tahu</dt><dd className="mt-1 font-extrabold tabular-nums text-slate-900">{tahu ? `${Number(tahu.quantity).toLocaleString('id-ID')} ${tahu.unit}` : 'Belum diketahui'}</dd></div>
                     <div><dt className="text-xs font-semibold text-slate-500">Pesanan aktif</dt><dd className="mt-1 font-extrabold tabular-nums text-slate-900">{cycle.totalOrders}</dd></div>
-                    <div><dt className="text-xs font-semibold text-slate-500">Nilai pesanan</dt><dd className="mt-1 font-extrabold tabular-nums text-slate-900">{formatCurrency(cycle.orderValue)}</dd></div>
+                    <div><dt className="text-xs font-semibold text-slate-500">Nilai pesanan</dt><dd className="mt-1 font-extrabold tabular-nums text-slate-900">{cycle.periodState === 'draft' ? 'Menunggu harga' : formatCurrency(cycle.orderValue)}</dd></div>
                   </dl>
                   <p className="mt-3 text-xs text-slate-600">Rekap {cycle.supplierDeadline ? formatDate(cycle.supplierDeadline, { weekday: 'long', day: 'numeric', month: 'short' }) : 'belum diketahui'} · barang tiba {formatDate(cycle.deliveryDate, { weekday: 'long', day: 'numeric', month: 'short' })}</p>
-                  {cycle.unknownBalanceCount > 0 ? <p className="mt-2 text-xs font-semibold text-amber-800">{cycle.unknownBalanceCount} saldo lama belum diverifikasi</p> : null}
+                  {cycle.unknownBalanceCount > 0 ? <p className="mt-2 text-xs font-semibold text-amber-800">{cycle.unknownBalanceCount} {cycle.periodState === 'draft' ? 'pesanan menunggu harga' : 'saldo lama belum diverifikasi'}</p> : null}
                 </div>
                 <Link href={`/cycles/${cycle.id}?cycleId=${cycle.id}`} className="mt-5 inline-flex items-center justify-end gap-1 text-sm font-bold text-emerald-800 hover:text-emerald-950">Buka minggu <ArrowRight className="h-4 w-4" /></Link>
               </article>

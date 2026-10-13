@@ -1,12 +1,12 @@
 import { type PrismaClient } from '@prisma/client'
-import { businessDate } from '../domain/calendar'
+import { cycleTiming } from '../domain/calendar'
 import { lineSubtotal, parseScaled, formatScaled, sumMoney } from '../domain/money'
 import { paymentSummary } from '../domain/payments'
 import { targetProgress } from '../domain/targets'
 import { ServiceError } from './mutation'
 import { getLegacyDashboardSummary } from './legacy-dashboard'
 
-export async function getCycleSummary(prisma: PrismaClient, cycleId: string) {
+export async function getCycleSummary(prisma: PrismaClient, cycleId: string, now = new Date()) {
   const cycle = await prisma.cycle.findUnique({
     where: { id: cycleId },
     include: {
@@ -67,6 +67,7 @@ export async function getCycleSummary(prisma: PrismaClient, cycleId: string) {
 
   return {
     cycle: {
+      ...cycleTiming({ periodStart: cycle.periodStart.toISOString(), periodEnd: cycle.periodEnd?.toISOString(), periodState: cycle.periodState, status: cycle.status }, now),
       id: cycle.id, label: cycle.label, periodStart: cycle.periodStart.toISOString().slice(0, 10),
       periodEnd: cycle.periodEnd?.toISOString().slice(0, 10) ?? null,
       supplierDeadline: cycle.supplierDeadline?.toISOString().slice(0, 10) ?? null,
@@ -99,7 +100,7 @@ export async function getCycleSummary(prisma: PrismaClient, cycleId: string) {
   }
 }
 
-export async function getDashboardSummary(prisma: PrismaClient, cycleId?: string | null) {
+export async function getDashboardSummary(prisma: PrismaClient, cycleId?: string | null, now = new Date()) {
   const [schema] = await prisma.$queryRaw<{ operational: boolean }[]>`
     SELECT
       to_regclass('public.payments') IS NOT NULL
@@ -108,7 +109,7 @@ export async function getDashboardSummary(prisma: PrismaClient, cycleId?: string
         WHERE table_schema = 'public' AND table_name = 'cycles' AND column_name = 'period_end'
       ) AS operational
   `
-  if (!schema?.operational) return getLegacyDashboardSummary(prisma, cycleId)
+  if (!schema?.operational) return getLegacyDashboardSummary(prisma, cycleId, now)
 
   const [cycles, totalMembers] = await Promise.all([
     prisma.cycle.findMany({ orderBy: { periodStart: 'desc' }, select: {
@@ -117,21 +118,19 @@ export async function getDashboardSummary(prisma: PrismaClient, cycleId?: string
     } }),
     prisma.member.count({ where: { isActive: true } }),
   ])
-  const today = businessDate(new Date())
   const selected = cycleId
     ? cycles.find((cycle) => cycle.id === cycleId)
-    : cycles.find((cycle) => cycle.periodStart.toISOString().slice(0, 10) <= today && (cycle.periodEnd?.toISOString().slice(0, 10) ?? '') >= today)
-      ?? cycles.find((cycle) => cycle.periodState === 'open')
-      ?? cycles[0]
+    : cycles.find((cycle) => cycleTiming({ periodStart: cycle.periodStart.toISOString(), periodEnd: cycle.periodEnd?.toISOString() }, now).calendarStatus === 'current')
   if (cycleId && !selected) throw new ServiceError(404, 'CYCLE_NOT_FOUND', 'Siklus tidak ditemukan')
   const allCycles = cycles.map((cycle) => ({
+    ...cycleTiming({ periodStart: cycle.periodStart.toISOString(), periodEnd: cycle.periodEnd?.toISOString(), periodState: cycle.periodState, status: cycle.status }, now),
     id: cycle.id, label: cycle.label, periodStart: cycle.periodStart.toISOString().slice(0, 10),
     periodEnd: cycle.periodEnd?.toISOString().slice(0, 10) ?? null,
     supplierDeadline: cycle.supplierDeadline?.toISOString().slice(0, 10) ?? null,
     deliveryDate: cycle.deliveryDate.toISOString().slice(0, 10),
     periodState: cycle.periodState, status: cycle.status, rulesVersion: cycle.rulesVersion,
   }))
-  if (!selected) return { hasCycle: false, allCycles, currentCycle: null, targets: [], rotation: null, finances: null, recentOrders: [], totalMembers }
-  const summary = await getCycleSummary(prisma, selected.id)
-  return { hasCycle: true, allCycles, currentCycle: summary.cycle, targets: summary.targets, rotation: summary.rotation, finances: summary.finances, recentOrders: summary.recentOrders, totalMembers }
+  if (!selected) return { evaluatedAt: now.toISOString(), hasCycle: false, allCycles, currentCycle: null, targets: [], rotation: null, finances: null, recentOrders: [], totalMembers }
+  const summary = await getCycleSummary(prisma, selected.id, now)
+  return { evaluatedAt: now.toISOString(), hasCycle: true, allCycles, currentCycle: summary.cycle, targets: summary.targets, rotation: summary.rotation, finances: summary.finances, recentOrders: summary.recentOrders, totalMembers }
 }

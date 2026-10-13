@@ -21,6 +21,7 @@ export default function RankingPage() {
     try {
       setLoading(true)
       const res = await fetch('/api/ranking')
+      if (!res.ok) throw new Error('Gagal memuat peringkat')
       const json = await res.json()
       setData(json)
     } catch (err) {
@@ -90,7 +91,7 @@ export default function RankingPage() {
             </span>
           </div>
           <p className="text-xs text-slate-500 max-w-2xl">
-            Apresiasi keaktifan rotasi anggota, ketepatan waktu pembayaran, dan partisipasi sub-grup dalam siklus mingguan.
+            Apresiasi keaktifan rotasi anggota, pelunasan pembayaran, dan partisipasi sub-grup dalam siklus mingguan.
           </p>
         </div>
       </div>
@@ -102,7 +103,7 @@ export default function RankingPage() {
           <div>
             <span className="font-bold text-slate-900 block">Sistem Penilaian Kompak:</span>
             <span className="text-slate-600">
-              Tiap Pesanan (+10 pts) • Tiap Belanja Rp 10.000 (+1 pt) • Bonus Lunas Tepat Waktu (+10 pts).
+              Tiap Pesanan (+10 pts) • Tiap Belanja Rp 10.000 (+1 pt) • Bonus proporsi pesanan lunas (hingga +10 pts).
             </span>
           </div>
         </div>

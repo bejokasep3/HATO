@@ -50,3 +50,12 @@ test('A10: anggota, produk dan order mengambil relasi nested', () => {
   assert.equal(orders[0].groupName, 'Grup Uji')
   assert.equal(orders[0].totalAmount, 150000)
 })
+
+test('unpriced orders retain the waiting-for-price label on mobile', () => {
+  const [order] = parseOrders([{
+    id, cycleId: secondId, memberId: id, totalAmount: '0.00', pricingPending: true,
+    paymentStatus: 'unverified', orderStatus: 'pending', createdAt: '2026-10-12T00:00:00Z',
+  }])
+  assert.equal(order.pricingPending, true)
+  assert.equal(order.paymentStatus, 'unverified')
+})

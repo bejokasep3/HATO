@@ -19,11 +19,13 @@ export async function getReports(prisma: PrismaClient, type: 'targets' | 'financ
       const receivedLines = confirmedReceipts.filter((item) => item.receivedQty.greaterThan(0))
       return {
         productId: product.id, name: product.name, unit: product.unit,
+        pricingPendingCount: activeItems.filter((item) => !item.order.ledgerReconciledAt && item.order.totalAmount.isZero()).length,
+        confirmedReceiptCount: confirmedReceipts.length,
         orderedQuantity: formatScaled(activeItems.reduce((sum, item) => sum + parseScaled(item.quantity.toFixed(2), 2, 8), 0n)),
         receivedQuantity: formatScaled(confirmedReceipts.reduce((sum, item) => sum + parseScaled(item.receivedQty.toFixed(2), 2, 8), 0n)),
         damagedQuantity: formatScaled(confirmedReceipts.reduce((sum, item) => sum + parseScaled(item.damagedQty.toFixed(2), 2, 8), 0n)),
         orderValue: sumMoney(activeItems.map((item) => item.subtotal.toFixed(2))),
-        purchaseValue: receivedLines.every((item) => item.purchasePrice.greaterThan(0))
+        purchaseValue: confirmedReceipts.length > 0 && receivedLines.every((item) => item.purchasePrice.greaterThan(0))
           ? sumMoney(receivedLines.map((item) => lineSubtotal(item.purchasePrice.toFixed(2), item.receivedQty.toFixed(2))))
           : null,
       }

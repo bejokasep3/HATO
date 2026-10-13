@@ -45,6 +45,7 @@ export const orderPaymentSummarySchema = z.discriminatedUnion('status', [
 ])
 
 export const orderV2Schema = z.object({
+  pricingPending: z.boolean().optional(),
   id: idSchema,
   cycleId: idSchema,
   memberId: idSchema,

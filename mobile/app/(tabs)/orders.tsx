@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { View, Text, StyleSheet, FlatList, RefreshControl, TouchableOpacity, ActivityIndicator, Pressable } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { getOrders } from '@/lib/api';
@@ -58,10 +58,10 @@ export default function OrdersScreen() {
         </View>
 
         <View style={styles.cardBody}>
-          <Text style={styles.totalText}>{formatCurrency(item.totalAmount)}</Text>
+          <Text style={styles.totalText}>{item.pricingPending ? 'Menunggu harga' : formatCurrency(item.totalAmount)}</Text>
           <View style={[styles.paymentBadge, isPaid ? styles.bgGreen : styles.bgRed]}>
             <Text style={styles.paymentText}>
-              {isPaid ? 'LUNAS' : item.paymentStatus === 'partial' ? 'CICILAN' : item.paymentStatus === 'unverified' ? 'BELUM DIVERIFIKASI' : 'BELUM BAYAR'}
+              {item.pricingPending ? 'MENUNGGU HARGA' : isPaid ? 'LUNAS' : item.paymentStatus === 'partial' ? 'CICILAN' : item.paymentStatus === 'unverified' ? 'BELUM DIVERIFIKASI' : 'BELUM BAYAR'}
             </Text>
           </View>
         </View>
@@ -77,6 +77,7 @@ export default function OrdersScreen() {
           <Text style={styles.filterText}>{loadError} · Coba lagi</Text>
         </TouchableOpacity>
       ) : null}
+      <Pressable accessibilityRole="button" onPress={() => router.push('/cycles/new')} style={styles.filterContainer}><Text style={styles.filterText}>Mulai minggu ini</Text></Pressable>
       <View style={styles.filterContainer}>
         {(['all', 'unpaid', 'paid'] as const).map(f => (
           <TouchableOpacity 

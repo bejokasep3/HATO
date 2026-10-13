@@ -1,10 +1,12 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, RefreshControl, ScrollView, Share, StyleSheet, Text, TextInput, View } from 'react-native';
-import { useLocalSearchParams } from 'expo-router';
-import { closeCycle, confirmSupplierRecap, getCyclePrices, getDashboard, getSupplierRecap, openCycle, updateCycleTargets } from '@/lib/api';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { closeCycle, confirmSupplierRecap, getCyclePrices, getDashboard, getSupplierRecap, openCycle, updateCycleTargets, updateCyclePrices, newIdempotencyKey } from '@/lib/api';
 import { DashboardData, SupplierRecapResponse, WeeklyPrice } from '@/lib/types';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import { useAuth } from '@/lib/auth-context';
+import { cycleTiming, cycleStatusLabel } from '../../../src/lib/domain/calendar';
+import { useBusinessTime } from '../../../shared/use-business-time';
 
 function allocationFor(recap: SupplierRecapResponse) {
   if (recap.confirmed) return Object.fromEntries(recap.confirmed.items.map((item) => [item.productId, item.quantity]));
@@ -18,12 +20,16 @@ function allocationFor(recap: SupplierRecapResponse) {
 }
 
 export default function CycleDetailScreen() {
+  const router = useRouter();
   const { operationalSchema } = useAuth();
   const canMutate = operationalSchema === true;
   const params = useLocalSearchParams<{ id: string }>();
   const cycleId = Array.isArray(params.id) ? params.id[0] : params.id;
   const [dashboard, setDashboard] = useState<DashboardData | null>(null);
+  const now = useBusinessTime(dashboard?.evaluatedAt);
   const [prices, setPrices] = useState<WeeklyPrice[]>([]);
+  const [priceInputs, setPriceInputs] = useState<Record<string, { consumer: string; trader: string }>>({});
+  const priceAttempt = useRef<{ signature: string; key: string } | null>(null);
   const [recap, setRecap] = useState<SupplierRecapResponse | null>(null);
   const [allocations, setAllocations] = useState<Record<string, string>>({});
   const [ayamTarget, setAyamTarget] = useState('10');
@@ -41,6 +47,7 @@ export default function CycleDetailScreen() {
       const [summary, priceRows, recapData] = await Promise.all([getDashboard(cycleId), getCyclePrices(cycleId), getSupplierRecap(cycleId)]);
       setDashboard(summary);
       setPrices(priceRows);
+      setPriceInputs(Object.fromEntries(priceRows.map((price) => [price.productId, { consumer: price.consumerPrice ? String(price.consumerPrice) : '', trader: price.traderPrice ? String(price.traderPrice) : '' }])));
       setRecap(recapData);
       setAllocations(allocationFor(recapData));
       setAyamTarget(recapData.groups.find((group) => group.groupCode === 'AYAM')?.target ?? '10');
@@ -51,6 +58,7 @@ export default function CycleDetailScreen() {
 
   useEffect(() => { void load(); }, [load]);
   const cycle = dashboard?.currentCycle;
+  const timing = cycle ? cycleTiming(cycle, now) : null;
 
   const allocationErrors = useMemo(() => {
     if (!recap) return ['Rekap belum tersedia'];
@@ -83,6 +91,25 @@ export default function CycleDetailScreen() {
     finally { setSaving(''); }
   }
 
+  async function savePrices() {
+    if (!canMutate || !cycle || cycle.version === undefined) return;
+    const items = prices.map((price) => {
+      const values = priceInputs[price.productId];
+      if (!values || !/^\d+(?:[,.]\d{1,2})?$/.test(values.consumer) || !/^\d+(?:[,.]\d{1,2})?$/.test(values.trader)) throw new Error(`Isi kedua harga ${price.productName}.`);
+      return { productId: price.productId, consumerPrice: Number(values.consumer.replace(',', '.')).toFixed(2), traderPrice: Number(values.trader.replace(',', '.')).toFixed(2) };
+    });
+    const body = { expectedVersion: cycle.version, items };
+    const signature = JSON.stringify(body);
+    if (priceAttempt.current?.signature !== signature) priceAttempt.current = { signature, key: newIdempotencyKey() };
+    setSaving('prices');
+    try {
+      await updateCyclePrices(cycleId, body, { idempotencyKey: priceAttempt.current.key });
+      priceAttempt.current = null;
+      await load();
+      Alert.alert('Tersimpan', 'Harga disimpan. Kunci harga & buka minggu untuk menghitung tagihan.');
+    } finally { setSaving(''); }
+  }
+
   async function lockRecap() {
     if (!canMutate || !cycleId || !recap || allocationErrors.length) return;
     setSaving('recap');
@@ -100,11 +127,20 @@ export default function CycleDetailScreen() {
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.content} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); void load(); }} />} keyboardShouldPersistTaps="handled">
       {operationalSchema === false ? <View style={styles.warning}><Text style={styles.warningText}>Mode baca aktif. Perubahan siklus dinonaktifkan sampai schema operasional diperbarui.</Text></View> : null}
-      <View style={styles.header}><View style={styles.rowBetween}><Text style={styles.title}>{cycle.label}</Text><Text style={styles.phase}>{cycle.periodState ?? 'histori'}</Text></View><Text style={styles.muted}>{formatDate(cycle.periodStart)} sampai {formatDate(cycle.periodEnd ?? cycle.deliveryDate)} · versi {cycle.version}</Text><View style={styles.actions}>{cycle.periodState === 'draft' ? <Pressable disabled={!canMutate || Boolean(saving)} onPress={() => void changeState('open')} style={[styles.primary, !canMutate && styles.disabled]}><Text style={styles.primaryText}>Buka siklus</Text></Pressable> : null}{cycle.periodState === 'open' ? <Pressable disabled={!canMutate || Boolean(saving)} onPress={() => Alert.alert('Tutup siklus?', 'Pesanan baru akan ditolak, tetapi pembayaran tetap dapat dicatat.', [{ text: 'Batal', style: 'cancel' }, { text: 'Tutup', style: 'destructive', onPress: () => void changeState('closed') }])} style={[styles.secondary, !canMutate && styles.disabled]}><Text style={styles.secondaryText}>Tutup siklus</Text></Pressable> : null}</View></View>
+      <View style={styles.header}>
+        <View style={styles.rowBetween}><Text style={[styles.title, { flex: 1 }]}>{cycle.label}</Text><Text style={[styles.phase, { flexShrink: 1, maxWidth: '50%' }]}>{cycleStatusLabel(timing!.effectiveStatus)}</Text></View>
+        <Text style={styles.muted}>{formatDate(cycle.periodStart)} sampai {formatDate(cycle.periodEnd ?? cycle.deliveryDate)} · versi {cycle.version}</Text>
+        {timing?.calendarStatus === 'ended' ? <Text style={styles.muted}>Periode sudah berakhir. Data pesanan tetap dapat dilengkapi selama siklus belum ditutup manual.</Text> : null}
+        <View style={styles.actions}>{cycle.periodState === 'draft' ? <Pressable disabled={!canMutate || Boolean(saving)} onPress={() => void changeState('open')} style={[styles.primary, !canMutate && styles.disabled]}><Text style={styles.primaryText}>{timing?.calendarStatus === 'ended' ? 'Kunci harga & hitung tagihan' : 'Kunci harga & buka minggu'}</Text></Pressable> : null}{cycle.periodState === 'open' && timing?.calendarStatus === 'current' ? <Pressable disabled={!canMutate || Boolean(saving)} onPress={() => Alert.alert('Tutup siklus?', 'Pesanan baru akan ditolak, tetapi pembayaran tetap dapat dicatat.', [{ text: 'Batal', style: 'cancel' }, { text: 'Tutup', style: 'destructive', onPress: () => void changeState('closed') }])} style={[styles.secondary, !canMutate && styles.disabled]}><Text style={styles.secondaryText}>Tutup siklus</Text></Pressable> : null}</View>
+      </View>
 
       <View style={styles.section}><Text style={styles.sectionTitle}>Target minggu</Text><Text style={styles.muted}>Gabungan semua varian ayam dan tahu.</Text><View style={styles.targetGrid}><View style={styles.targetField}><Text style={styles.label}>Ayam (kg)</Text><TextInput editable={canMutate && cycle.periodState !== 'closed'} keyboardType="decimal-pad" value={ayamTarget} onChangeText={setAyamTarget} style={styles.input} /></View><View style={styles.targetField}><Text style={styles.label}>Tahu (bungkus)</Text><TextInput editable={canMutate && cycle.periodState !== 'closed'} keyboardType="number-pad" value={tahuTarget} onChangeText={setTahuTarget} style={styles.input} /></View></View>{cycle.periodState !== 'closed' ? <><TextInput editable={canMutate} value={reason} onChangeText={setReason} placeholder="Alasan perubahan" style={styles.inputWide} /><Pressable disabled={!canMutate || saving === 'targets'} onPress={() => void saveTargets()} style={[styles.secondary, !canMutate && styles.disabled]}><Text style={styles.secondaryText}>{saving === 'targets' ? 'Menyimpan…' : 'Simpan target'}</Text></Pressable></> : null}</View>
 
-      <View style={styles.section}><Text style={styles.sectionTitle}>Harga minggu ini</Text><View style={styles.grouped}>{prices.map((price) => <View key={price.id} style={styles.listRow}><View><Text style={styles.rowTitle}>{price.productName}</Text><Text style={styles.muted}>Konsumen {formatCurrency(price.consumerPrice)} · Pedagang {formatCurrency(price.traderPrice)}</Text></View></View>)}</View></View>
+      <View style={styles.section}><Text style={styles.sectionTitle}>Harga minggu ini</Text>
+        {cycle.periodState === 'draft' ? <><Text style={styles.muted}>Catat pesanan sekarang. Tagihan dihitung setelah harga dikunci.</Text><Pressable accessibilityRole="button" onPress={() => router.push({ pathname: '/orders/new', params: { cycleId } })} style={styles.secondary}><Text style={styles.secondaryText}>Catat pesanan, harga menyusul</Text></Pressable></> : null}
+        <View style={styles.grouped}>{prices.map((price) => <View key={price.id} style={styles.listRow}><Text style={styles.rowTitle}>{price.productName}</Text>{cycle.periodState === 'draft' ? <View style={{ gap: 8, paddingVertical: 10 }}><Text style={styles.muted}>Harga konsumen</Text><TextInput accessibilityLabel={`Harga konsumen ${price.productName}`} editable={canMutate && !saving} keyboardType="decimal-pad" value={priceInputs[price.productId]?.consumer ?? ''} onChangeText={(consumer) => setPriceInputs((current) => ({ ...current, [price.productId]: { ...current[price.productId], consumer } }))} style={[styles.quantityInput, { width: '100%' }]} /><Text style={styles.muted}>Harga pedagang</Text><TextInput accessibilityLabel={`Harga pedagang ${price.productName}`} editable={canMutate && !saving} keyboardType="decimal-pad" value={priceInputs[price.productId]?.trader ?? ''} onChangeText={(trader) => setPriceInputs((current) => ({ ...current, [price.productId]: { ...current[price.productId], trader } }))} style={[styles.quantityInput, { width: '100%' }]} /></View> : <Text style={styles.muted}>Konsumen {formatCurrency(price.consumerPrice)} · Pedagang {formatCurrency(price.traderPrice)}</Text>}</View>)}</View>
+        {cycle.periodState === 'draft' ? <Pressable accessibilityRole="button" disabled={!canMutate || Boolean(saving)} onPress={() => void savePrices().catch((cause) => Alert.alert('Gagal', cause instanceof Error ? cause.message : 'Harga gagal disimpan.'))} style={[styles.primary, (!canMutate || Boolean(saving)) && styles.disabled]}><Text style={styles.primaryText}>{saving === 'prices' ? 'Menyimpan…' : 'Simpan harga'}</Text></Pressable> : null}
+      </View>
 
       <View style={styles.section}><View style={styles.rowBetween}><View><Text style={styles.sectionTitle}>Rekap supplier</Text><Text style={styles.muted}>Bagi minimum kelompok ke tiap varian.</Text></View>{recap.confirmed ? <Text style={styles.locked}>Dikunci</Text> : null}</View><View style={styles.grouped}>{recap.groups.map((group) => <View key={group.groupCode} style={styles.group}><Text style={styles.rowTitle}>{group.groupCode === 'AYAM' ? 'Ayam' : 'Tahu'} · target {Number(group.target).toLocaleString('id-ID')}</Text>{recap.items.filter((item) => item.groupCode === group.groupCode).map((item) => <View key={item.productId} style={styles.allocationRow}><View style={styles.flex}><Text style={styles.rowTitle}>{item.productName}</Text><Text style={styles.muted}>Pesanan {Number(item.demand).toLocaleString('id-ID')} {item.unit}</Text></View>{recap.confirmed ? <Text style={styles.amount}>{Number(recap.confirmed.items.find((line) => line.productId === item.productId)?.quantity ?? 0).toLocaleString('id-ID')} {item.unit}</Text> : <View style={styles.quantity}><TextInput editable={canMutate} keyboardType={item.unit === 'bungkus' ? 'number-pad' : 'decimal-pad'} value={allocations[item.productId] ?? ''} onChangeText={(value) => setAllocations((current) => ({ ...current, [item.productId]: value.replace(',', '.') }))} style={styles.quantityInput} /><Text style={styles.muted}>{item.unit}</Text></View>}</View>)}</View>)}</View>{allocationErrors.map((message) => <Text key={message} style={styles.error}>{message}</Text>)}{!recap.confirmed ? <Pressable disabled={!canMutate || allocationErrors.length > 0 || recap.periodState !== 'open' || saving === 'recap'} onPress={() => Alert.alert('Kunci rekap?', 'Target, nama produk, dan jumlah pembelian akan menjadi snapshot.', [{ text: 'Batal', style: 'cancel' }, { text: 'Kunci', onPress: () => void lockRecap() }])} style={[styles.primary, (!canMutate || allocationErrors.length > 0 || recap.periodState !== 'open') && styles.disabled]}><Text style={styles.primaryText}>{saving === 'recap' ? 'Mengunci…' : 'Konfirmasi rekap'}</Text></Pressable> : <Pressable onPress={() => void Share.share({ message: recap.confirmed!.whatsappText })} style={styles.secondary}><Text style={styles.secondaryText}>Bagikan rekap</Text></Pressable>}</View>
     </ScrollView>

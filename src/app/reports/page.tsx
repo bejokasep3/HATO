@@ -32,7 +32,8 @@ import {
   LineChart,
   Line,
 } from 'recharts'
-import { formatCurrency, formatDate, getWhatsAppUrl } from '@/lib/utils'
+import { formatDate, getWhatsAppUrl } from '@/lib/utils'
+import { reportCurrency as formatCurrency, reportNumber, reportPercent, reportCsvCell } from '../../../shared/report-display'
 import { toast } from 'sonner'
 
 type ReportTooltipEntry = {
@@ -125,7 +126,7 @@ export default function ReportsPage() {
         'Sisa Tahu (bks)',
       ]
       rows = targetData.cycleReports.map((r: any) => [
-        `"${r.cycleLabel}"`,
+        r.cycleLabel,
         r.status,
         r.chicken.target,
         r.chicken.beginningStock,
@@ -134,51 +135,51 @@ export default function ReportsPage() {
         r.chicken.breakdown.karkas,
         r.chicken.breakdown.recah,
         r.chicken.breakdown.gebrus,
-        r.chicken.isMet ? 'TERCAPAI' : `KURANG ${r.chicken.shortfall} kg`,
+        r.chicken.isMet === null ? 'Belum diketahui' : r.chicken.isMet ? 'TERCAPAI' : `KURANG ${reportNumber(r.chicken.shortfall)} kg`,
         r.chicken.endingStock,
         r.tofu.target,
         r.tofu.beginningStock,
         r.tofu.goodsIn,
         r.tofu.sold,
-        r.tofu.isMet ? 'TERCAPAI' : `KURANG ${r.tofu.shortfall} bks`,
+        r.tofu.isMet === null ? 'Belum diketahui' : r.tofu.isMet ? 'TERCAPAI' : `KURANG ${reportNumber(r.tofu.shortfall)} bks`,
         r.tofu.endingStock,
       ])
     } else if (activeTab === 'financial' && financialData) {
       headers = ['Siklus', 'Status', 'Jumlah Pesanan', 'Omzet Penjualan', 'Modal (HPP)', 'Margin Kotor', '% Margin', 'Sudah Bayar', 'Piutang', '% Kepatuhan']
       rows = financialData.cycles.map((c: any) => [
-        `"${c.cycleLabel}"`,
+        c.cycleLabel,
         c.status,
         c.orderCount,
         c.totalRevenue,
         c.totalCost,
         c.grossMargin,
-        `${c.marginPct}%`,
+        `${reportPercent(c.marginPct)}`,
         c.paidRevenue,
         c.unpaidRevenue,
-        `${c.collectionRate}%`,
+        `${reportPercent(c.collectionRate)}`,
       ])
     } else if (activeTab === 'commodity' && commodityData) {
-      headers = ['Komoditas', 'Satuan', 'Kategori', 'Dipesan', 'Diterima', 'Rusak', 'Omzet', 'Modal', 'Laba Bersih', '% Margin', 'Rata-rata Jual', 'Rata-rata Beli']
+      headers = ['Komoditas', 'Satuan', 'Kategori', 'Dipesan', 'Diterima', 'Rusak', 'Omzet', 'Modal', 'Margin Kotor', '% Margin', 'Rata-rata Jual', 'Rata-rata Beli']
       rows = commodityData.commodities.map((c: any) => [
-        `"${c.name}"`,
+        c.name,
         c.unit,
-        `"${c.category || '-'}"`,
+        c.category || '-',
         c.totalOrderedQty,
         c.totalReceivedQty,
         c.totalDamagedQty,
         c.totalRevenue,
         c.totalCost,
         c.grossProfit,
-        `${c.profitMarginPct}%`,
+        `${reportPercent(c.profitMarginPct)}`,
         c.avgSellingPrice,
         c.avgPurchasePrice,
       ])
     } else if (activeTab === 'member' && memberData) {
       headers = ['Nama Anggota', 'No HP', 'Sub-Grup', 'Peran', 'Jumlah Pesanan', 'Total Belanja', 'Pesanan Lunas', 'Pesanan Belum Bayar', 'Piutang', '% Kepatuhan']
       rows = memberData.members.map((m: any) => [
-        `"${m.name}"`,
-        `"${m.phone}"`,
-        `"${m.groupName}"`,
+        m.name,
+        m.phone,
+        m.groupName,
         m.role,
         m.orderCount,
         m.totalSpend,
@@ -190,13 +191,13 @@ export default function ReportsPage() {
     } else if (activeTab === 'receivable' && receivableData) {
       headers = ['Anggota', 'No HP', 'Sub-Grup', 'Siklus', 'Tagihan', 'Keterlambatan (Hari)', 'Rincian Produk']
       rows = receivableData.orders.map((o: any) => [
-        `"${o.memberName}"`,
-        `"${o.memberPhone}"`,
-        `"${o.groupName}"`,
-        `"${o.cycleLabel}"`,
+        o.memberName,
+        o.memberPhone,
+        o.groupName,
+        o.cycleLabel,
         o.totalAmount,
         `${o.daysOverdue} hari`,
-        `"${o.itemSummary}"`,
+        o.itemSummary,
       ])
     }
 
@@ -205,7 +206,7 @@ export default function ReportsPage() {
       return
     }
 
-    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map((r) => r.join(','))].join('\n')
+    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.map(reportCsvCell).join(','), ...rows.map((r) => r.map(reportCsvCell).join(','))].join('\n')
     const encodedUri = encodeURI(csvContent)
     const link = document.createElement('a')
     link.setAttribute('href', encodedUri)
@@ -222,21 +223,21 @@ export default function ReportsPage() {
     if (activeTab === 'targets' && targetData) {
       text = `🎯 *LAPORAN TARGET & SISA STOK HATO*\n`
       text += `Total Siklus: ${targetData.summary.totalCycles}\n`
-      text += `Ketercapaian Target Ayam (20kg): ${targetData.summary.chickenSuccessRate}%\n`
-      text += `Ketercapaian Target Tahu (20bks): ${targetData.summary.tofuSuccessRate}%\n`
-      text += `Sisa Stok Ayam Mengendap Saat Ini: ${targetData.summary.currentChickenLeftover} kg\n`
-      text += `Sisa Stok Tahu Mengendap Saat Ini: ${targetData.summary.currentTofuLeftover} bks\n`
+      text += `Ketercapaian Target Ayam: ${reportPercent(targetData.summary.chickenSuccessRate)}\n`
+      text += `Ketercapaian Target Tahu: ${reportPercent(targetData.summary.tofuSuccessRate)}\n`
+      text += `Sisa Stok Ayam Mengendap Saat Ini: ${reportNumber(targetData.summary.currentChickenLeftover)} kg\n`
+      text += `Sisa Stok Tahu Mengendap Saat Ini: ${reportNumber(targetData.summary.currentTofuLeftover)} bks\n`
       text += `------------------------------------\n`
       targetData.cycleReports.forEach((r: any) => {
         text += `*${r.cycleLabel}*\n`
-        text += `• Ayam Campur: Terjual ${r.chicken.sold}/${r.chicken.target} kg (${r.chicken.percentage}%) - ${r.chicken.isMet ? '✅ Tercapai' : `❌ Kurang ${r.chicken.shortfall}kg`}\n`
+        text += `• Ayam Campur: Terjual ${reportNumber(r.chicken.sold)}/${reportNumber(r.chicken.target)} kg (${reportPercent(r.chicken.percentage)}) - ${r.chicken.isMet === null ? 'Belum diketahui' : r.chicken.isMet ? '✅ Tercapai' : `❌ Kurang ${reportNumber(r.chicken.shortfall)}kg`}\n`
         text += `  (Rincian: Karkas ${r.chicken.breakdown.karkas}kg, Recah ${r.chicken.breakdown.recah}kg, Gebrus ${r.chicken.breakdown.gebrus}kg)\n`
-        text += `  Stok Awal: ${r.chicken.beginningStock}kg | Sisa Belum Terjual: ${r.chicken.endingStock}kg\n`
-        text += `• Tahu Campur: Terjual ${r.tofu.sold}/${r.tofu.target} bks (${r.tofu.percentage}%) - ${r.tofu.isMet ? '✅ Tercapai' : `❌ Kurang ${r.tofu.shortfall}bks`}\n`
+        text += `  Stok Awal: ${reportNumber(r.chicken.beginningStock)}kg | Sisa Stok Fisik: ${reportNumber(r.chicken.endingStock)}kg\n`
+        text += `• Tahu Campur: Terjual ${reportNumber(r.tofu.sold)}/${reportNumber(r.tofu.target)} bks (${reportPercent(r.tofu.percentage)}) - ${r.tofu.isMet === null ? 'Belum diketahui' : r.tofu.isMet ? '✅ Tercapai' : `❌ Kurang ${reportNumber(r.tofu.shortfall)}bks`}\n`
         if (r.tofu.breakdown) {
           text += `  (Rincian: Kuning ${r.tofu.breakdown.kuning}bks, Putih ${r.tofu.breakdown.putih}bks)\n`
         }
-        text += `  Stok Awal: ${r.tofu.beginningStock}bks | Sisa Belum Terjual: ${r.tofu.endingStock}bks\n\n`
+        text += `  Stok Awal: ${reportNumber(r.tofu.beginningStock)}bks | Sisa Stok Fisik: ${reportNumber(r.tofu.endingStock)}bks\n\n`
       })
       text += `Catatan: Sisa barang belum terjual otomatis menjadi stok awal di siklus berikutnya.`
     } else if (activeTab === 'financial' && financialData) {
@@ -244,9 +245,9 @@ export default function ReportsPage() {
       text += `Total Siklus: ${financialData.summary.totalCycles}\n`
       text += `Total Omzet: ${formatCurrency(financialData.summary.totalRevenue)}\n`
       text += `Total Modal (HPP): ${formatCurrency(financialData.summary.totalCost)}\n`
-      text += `Total Margin Kotor: ${formatCurrency(financialData.summary.totalGrossMargin)} (${financialData.summary.overallMarginPct}%)\n`
+      text += `Total Margin Kotor: ${formatCurrency(financialData.summary.totalGrossMargin)} (${reportPercent(financialData.summary.overallMarginPct)})\n`
       text += `Total Piutang Tertunggak: ${formatCurrency(financialData.summary.totalUnpaid)}\n`
-      text += `Tingkat Kepatuhan Bayar: ${financialData.summary.overallCollectionRate}%\n`
+      text += `Tingkat Kepatuhan Bayar: ${reportPercent(financialData.summary.overallCollectionRate)}\n`
     } else if (activeTab === 'receivable' && receivableData) {
       text = `📋 *REKAP PIUTANG & TAGIHAN BELUM BAYAR*\n`
       text += `Total Piutang: ${formatCurrency(receivableData.summary.totalUnpaidAmount)}\n`
@@ -278,7 +279,7 @@ export default function ReportsPage() {
             </span>
           </div>
           <p className="text-xs text-slate-500 max-w-2xl">
-            Evaluasi pencapaian kuota supplier Level 4, stok mengendap carryover, margin keuntungan bersih, dan status piutang anggota.
+            Evaluasi target supplier, stok tercatat, margin kotor, dan piutang anggota. Stok atau modal yang belum dikonfirmasi ditampilkan sebagai belum diketahui.
           </p>
         </div>
 
@@ -308,6 +309,8 @@ export default function ReportsPage() {
           </button>
         </div>
       </div>
+
+      {[targetData, financialData, memberData, receivableData][['targets', 'financial', 'member', 'receivable'].indexOf(activeTab)]?.unknownBalanceCount > 0 ? <p role="status" className="text-sm text-amber-800">Sebagian saldo belum diverifikasi atau masih menunggu harga. Daftar penagihan hanya memuat sisa tagihan yang terverifikasi.</p> : null}
 
       {/* Tactile Segmented Control Tabs */}
       <div className="inline-flex bg-slate-100/90 p-1 rounded-2xl border border-slate-200/80 gap-1 overflow-x-auto w-full sm:w-auto">
@@ -388,7 +391,7 @@ export default function ReportsPage() {
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-semibold text-slate-500">Target Ayam Campur</span>
                     <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200/60">
-                      {targetData.summary.chickenSuccessRate}% Sukses
+                      {reportPercent(targetData.summary.chickenSuccessRate)} Sukses
                     </span>
                   </div>
                   <div className="mt-2.5 flex items-baseline gap-1.5">
@@ -396,7 +399,7 @@ export default function ReportsPage() {
                     <span className="text-xs font-semibold text-slate-500">kg / minggu</span>
                   </div>
                   <p className="text-[11px] text-slate-400 mt-1">
-                    Karkas + Recah + Gebrus ({targetData.summary.chickenMetCount}/{targetData.summary.totalCycles} siklus)
+                    Karkas + Recah + Gebrus ({targetData.summary.chickenMetCount}/{targetData.summary.knownChickenCycleCount ?? targetData.summary.totalCycles} siklus)
                   </p>
                 </div>
 
@@ -409,11 +412,11 @@ export default function ReportsPage() {
                     </span>
                   </div>
                   <div className="mt-2.5 flex items-baseline gap-1.5">
-                    <span className="text-2xl font-black text-amber-900">{targetData.summary.currentChickenLeftover}</span>
+                    <span className="text-2xl font-black text-amber-900">{reportNumber(targetData.summary.currentChickenLeftover)}</span>
                     <span className="text-xs font-semibold text-amber-700">kg</span>
                   </div>
                   <p className="text-[11px] text-slate-400 mt-1">
-                    Otomatis dibawa menjadi stok awal minggu depan
+                    Stok awal minggu berikutnya perlu diverifikasi
                   </p>
                 </div>
 
@@ -422,7 +425,7 @@ export default function ReportsPage() {
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-semibold text-slate-500">Target Tahu Campur</span>
                     <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200/60">
-                      {targetData.summary.tofuSuccessRate}% Sukses
+                      {reportPercent(targetData.summary.tofuSuccessRate)} Sukses
                     </span>
                   </div>
                   <div className="mt-2.5 flex items-baseline gap-1.5">
@@ -430,7 +433,7 @@ export default function ReportsPage() {
                     <span className="text-xs font-semibold text-slate-500">bks / minggu</span>
                   </div>
                   <p className="text-[11px] text-slate-400 mt-1">
-                    Tahu Kuning + Tahu Putih ({targetData.summary.tofuMetCount}/{targetData.summary.totalCycles} siklus)
+                    Tahu Kuning + Tahu Putih ({targetData.summary.tofuMetCount}/{targetData.summary.knownTofuCycleCount ?? targetData.summary.totalCycles} siklus)
                   </p>
                 </div>
 
@@ -443,11 +446,11 @@ export default function ReportsPage() {
                     </span>
                   </div>
                   <div className="mt-2.5 flex items-baseline gap-1.5">
-                    <span className="text-2xl font-black text-amber-900">{targetData.summary.currentTofuLeftover}</span>
+                    <span className="text-2xl font-black text-amber-900">{reportNumber(targetData.summary.currentTofuLeftover)}</span>
                     <span className="text-xs font-semibold text-amber-700">bks</span>
                   </div>
                   <p className="text-[11px] text-slate-400 mt-1">
-                    Otomatis dibawa menjadi stok awal minggu depan
+                    Stok awal minggu berikutnya perlu diverifikasi
                   </p>
                 </div>
               </div>
@@ -457,11 +460,11 @@ export default function ReportsPage() {
                 <div className="flex items-center gap-2">
                   <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
                   <span>
-                    <strong>Aturan Target:</strong> Ayam Campur (Karkas, Recah, Gebrus) target 20 kg/minggu. Tahu Campur (Kuning & Putih) target 20 bks/minggu.
+                    <strong>Aturan Target:</strong> Target ayam (Karkas, Recah, Gebrus) dan tahu (Kuning, Putih) mengikuti jumlah yang diisi pada tiap siklus.
                   </span>
                 </div>
                 <span className="text-[11px] text-slate-400">
-                  Barang masuk sesuai kuota targetan • Sisa belum terjual dialirkan ke siklus berikutnya
+                  Barang masuk mengikuti penerimaan terkonfirmasi; stok antar-siklus belum diasumsikan.
                 </span>
               </div>
 
@@ -472,7 +475,7 @@ export default function ReportsPage() {
                   <div className="flex items-center justify-between mb-4">
                     <div>
                       <h4 className="font-bold text-sm text-slate-900">🍗 Tren Ayam Campur (kg)</h4>
-                      <p className="text-[11px] text-slate-400">Target 20 kg vs Kuantitas Terjual vs Sisa Stok</p>
+                      <p className="text-[11px] text-slate-400">Target siklus, jumlah dipesan, dan stok fisik</p>
                     </div>
                   </div>
                   <div className="h-60 w-full">
@@ -499,7 +502,7 @@ export default function ReportsPage() {
                   <div className="flex items-center justify-between mb-4">
                     <div>
                       <h4 className="font-bold text-sm text-slate-900">🧈 Tren Tahu Campur (bungkus)</h4>
-                      <p className="text-[11px] text-slate-400">Target 20 bks vs Kuantitas Terjual vs Sisa Stok</p>
+                      <p className="text-[11px] text-slate-400">Target siklus, jumlah dipesan, dan stok fisik</p>
                     </div>
                   </div>
                   <div className="h-60 w-full">
@@ -539,10 +542,10 @@ export default function ReportsPage() {
                       <tr>
                         <th className="py-3 px-4 border-r border-slate-200">Siklus</th>
                         <th colSpan={5} className="py-2.5 px-3 text-center bg-emerald-50/60 border-r border-slate-200 text-emerald-900">
-                          🍗 AYAM CAMPUR (Target: 20 kg/minggu)
+                          🍗 AYAM CAMPUR (Target per siklus)
                         </th>
                         <th colSpan={5} className="py-2.5 px-3 text-center bg-blue-50/60 text-blue-900">
-                          🧈 TAHU CAMPUR (Target: 20 bks/minggu)
+                          🧈 TAHU CAMPUR (Target per siklus)
                         </th>
                       </tr>
                       <tr className="border-b border-slate-200 bg-slate-50/90 text-slate-500 font-semibold text-[10px]">
@@ -582,18 +585,18 @@ export default function ReportsPage() {
 
                           {/* Ayam: Stok Awal */}
                           <td className="py-3.5 px-2.5 text-center font-semibold text-slate-700">
-                            {r.chicken.beginningStock} kg
+                            {reportNumber(r.chicken.beginningStock)} kg
                           </td>
 
                           {/* Ayam: Masuk */}
                           <td className="py-3.5 px-2.5 text-center font-bold text-slate-800">
-                            {r.chicken.goodsIn} kg
+                            {reportNumber(r.chicken.goodsIn)} kg
                           </td>
 
                           {/* Ayam: Terjual (Rincian) */}
                           <td className="py-3.5 px-3">
                             <div className="font-extrabold text-slate-900">
-                              {r.chicken.sold} / {r.chicken.target} kg
+                              {reportNumber(r.chicken.sold)} / {reportNumber(r.chicken.target)} kg
                             </div>
                             <div className="flex flex-wrap items-center gap-1 mt-1 text-[10px] text-slate-500">
                               <span className="bg-slate-100 px-1.5 py-0.5 rounded">Karkas: {r.chicken.breakdown.karkas}kg</span>
@@ -604,15 +607,15 @@ export default function ReportsPage() {
 
                           {/* Ayam: Status Target */}
                           <td className="py-3.5 px-2.5 text-center">
-                            {r.chicken.isMet ? (
+                            {r.chicken.isMet === null ? 'Belum diketahui' : r.chicken.isMet ? (
                               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800">
                                 <CheckCircle2 className="w-3 h-3" />
-                                Tercapai ({r.chicken.percentage}%)
+                                Tercapai ({reportPercent(r.chicken.percentage)})
                               </span>
                             ) : (
                               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold bg-amber-100 text-amber-800">
                                 <AlertCircle className="w-3 h-3" />
-                                Kurang {r.chicken.shortfall}kg ({r.chicken.percentage}%)
+                                Kurang {reportNumber(r.chicken.shortfall)}kg ({reportPercent(r.chicken.percentage)})
                               </span>
                             )}
                           </td>
@@ -620,24 +623,24 @@ export default function ReportsPage() {
                           {/* Ayam: Sisa Akhir */}
                           <td className="py-3.5 px-3 text-center bg-amber-50/40 border-r border-slate-200">
                             <span className="text-xs font-black px-2 py-1 rounded-md bg-amber-100 text-amber-900 inline-block">
-                              {r.chicken.endingStock} kg
+                              {reportNumber(r.chicken.endingStock)} kg
                             </span>
                           </td>
 
                           {/* Tahu: Stok Awal */}
                           <td className="py-3.5 px-2.5 text-center font-semibold text-slate-700">
-                            {r.tofu.beginningStock} bks
+                            {reportNumber(r.tofu.beginningStock)} bks
                           </td>
 
                           {/* Tahu: Masuk */}
                           <td className="py-3.5 px-2.5 text-center font-bold text-slate-800">
-                            {r.tofu.goodsIn} bks
+                            {reportNumber(r.tofu.goodsIn)} bks
                           </td>
 
                           {/* Tahu: Terjual (Rincian) */}
                           <td className="py-3.5 px-3">
                             <div className="font-extrabold text-slate-900">
-                              {r.tofu.sold} / {r.tofu.target} bks
+                              {reportNumber(r.tofu.sold)} / {reportNumber(r.tofu.target)} bks
                             </div>
                             {r.tofu.breakdown && (
                               <div className="flex flex-wrap items-center gap-1 mt-1 text-[10px] text-slate-500">
@@ -649,7 +652,7 @@ export default function ReportsPage() {
 
                           {/* Tahu: Status Target */}
                           <td className="py-3.5 px-2.5 text-center">
-                            {r.tofu.isMet ? (
+                            {r.tofu.isMet === null ? 'Belum diketahui' : r.tofu.isMet ? (
                               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800">
                                 <CheckCircle2 className="w-3 h-3" />
                                 Tercapai
@@ -657,7 +660,7 @@ export default function ReportsPage() {
                             ) : (
                               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold bg-amber-100 text-amber-800">
                                 <AlertCircle className="w-3 h-3" />
-                                Kurang {r.tofu.shortfall}bks
+                                Kurang {reportNumber(r.tofu.shortfall)}bks
                               </span>
                             )}
                           </td>
@@ -665,7 +668,7 @@ export default function ReportsPage() {
                           {/* Tahu: Sisa Akhir */}
                           <td className="py-3.5 px-3 text-center bg-amber-50/40">
                             <span className="text-xs font-black px-2 py-1 rounded-md bg-amber-100 text-amber-900 inline-block">
-                              {r.tofu.endingStock} bks
+                              {reportNumber(r.tofu.endingStock)} bks
                             </span>
                           </td>
                         </tr>
@@ -702,7 +705,7 @@ export default function ReportsPage() {
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-semibold text-slate-500">Margin Kotor</span>
                     <span className="text-[10px] font-bold px-1.5 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200/60 rounded-full">
-                      {financialData.summary.overallMarginPct}%
+                      {reportPercent(financialData.summary.overallMarginPct)}
                     </span>
                   </div>
                   <span className="text-lg sm:text-xl font-black text-emerald-700 mt-1.5 block">
@@ -715,7 +718,7 @@ export default function ReportsPage() {
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-semibold text-slate-500">Sudah Lunas</span>
                     <span className="text-[10px] font-bold px-1.5 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200/60 rounded-full">
-                      {financialData.summary.overallCollectionRate}%
+                      {reportPercent(financialData.summary.overallCollectionRate)}
                     </span>
                   </div>
                   <span className="text-lg sm:text-xl font-black text-emerald-700 mt-1.5 block">
@@ -800,7 +803,7 @@ export default function ReportsPage() {
                           <td className="py-3.5 px-3 text-right font-black text-emerald-700">{formatCurrency(c.grossMargin)}</td>
                           <td className="py-3.5 px-3 text-center">
                             <span className="text-xs font-bold px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800">
-                              {c.marginPct}%
+                              {reportPercent(c.marginPct)}
                             </span>
                           </td>
                           <td className="py-3.5 px-3 text-right font-semibold text-emerald-700">{formatCurrency(c.paidRevenue)}</td>
@@ -809,7 +812,7 @@ export default function ReportsPage() {
                             <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${
                               c.collectionRate === 100 ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
                             }`}>
-                              {c.collectionRate}%
+                              {reportPercent(c.collectionRate)}
                             </span>
                           </td>
                         </tr>
@@ -877,10 +880,10 @@ export default function ReportsPage() {
                             {item.totalOrderedQty} {item.unit}
                           </td>
                           <td className="py-3.5 px-3 text-center font-medium text-slate-600">
-                            {item.totalReceivedQty} {item.unit}
+                            {reportNumber(item.totalReceivedQty)} {item.unit}
                           </td>
                           <td className="py-3.5 px-3 text-center font-bold text-rose-600">
-                            {item.totalDamagedQty > 0 ? `${item.totalDamagedQty} ${item.unit}` : '-'}
+                            {item.totalDamagedQty > 0 ? `${reportNumber(item.totalDamagedQty)} ${item.unit}` : '-'}
                           </td>
                           <td className="py-3.5 px-3 text-right font-extrabold text-slate-900">
                             {formatCurrency(item.totalRevenue)}
@@ -893,7 +896,7 @@ export default function ReportsPage() {
                           </td>
                           <td className="py-3.5 px-3 text-center">
                             <span className="text-xs font-bold px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800">
-                              {item.profitMarginPct}%
+                              {reportPercent(item.profitMarginPct)}
                             </span>
                           </td>
                           <td className="py-3.5 px-4 text-right text-xs">

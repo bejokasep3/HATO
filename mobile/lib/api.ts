@@ -150,6 +150,16 @@ export async function apiPatch<T>(path: string, body: unknown, options: Mutation
   }
 }
 
+export async function updateCyclePrices(cycleId: string, body: { expectedVersion: number; items: { productId: string; consumerPrice: string; traderPrice: string }[] }, options: MutationOptions = {}): Promise<Cycle> {
+  const response = await fetchWithTimeout(`${API_BASE_URL}/api/cycles/${cycleId}/prices`, {
+    method: 'PUT',
+    headers: { 'Accept': 'application/json', 'Content-Type': 'application/json', 'Idempotency-Key': options.idempotencyKey ?? newIdempotencyKey() },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) return throwApiError(response);
+  return response.json();
+}
+
 export async function apiDelete(path: string): Promise<void> {
   try {
     const response = await fetchWithTimeout(`${API_BASE_URL}${path}`, {

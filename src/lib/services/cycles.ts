@@ -1,5 +1,6 @@
-import { type Cycle, type CycleTarget, type PrismaClient } from '@prisma/client'
+import { Prisma, type Cycle, type CycleTarget, type PrismaClient } from '@prisma/client'
 import { cycleDates } from '../domain/calendar'
+import { lineSubtotal, sumMoney } from '../domain/money'
 import { ServiceError, lockCycle, runIdempotent, type MutationResponse, type Tx } from './mutation'
 
 type TargetInput = { groupCode: 'AYAM' | 'TAHU'; quantity: string }
@@ -56,14 +57,14 @@ async function prepareRotation(tx: Tx, cycleId: string) {
 
 export async function createCycle(
   prisma: PrismaClient,
-  input: { actorId: string; key: string; periodStart: string; targets: TargetInput[]; notes?: string | null },
+  input: { actorId: string; key: string; periodStart: string; targets: TargetInput[]; notes?: string | null; copyPreviousPrices?: boolean },
 ): Promise<MutationResponse> {
   let dates: ReturnType<typeof cycleDates>
   try { dates = cycleDates(input.periodStart) } catch { throw new ServiceError(400, 'INVALID_PERIOD_START', 'Siklus harus dimulai hari Senin') }
   const targets = [...input.targets].sort((a, b) => a.groupCode.localeCompare(b.groupCode))
   return runIdempotent(prisma, {
     actorId: input.actorId, operation: 'cycle.create', key: input.key,
-    payload: { periodStart: input.periodStart, targets, notes: input.notes ?? null },
+    payload: { periodStart: input.periodStart, targets, notes: input.notes ?? null, ...(input.copyPreviousPrices === false ? { copyPreviousPrices: false } : {}) },
   }, async (tx) => {
     const existingWeek = await tx.cycle.findUnique({ where: { weekKey: dbDate(input.periodStart) } })
     if (existingWeek) throw new ServiceError(409, 'WEEK_ALREADY_EXISTS', 'Siklus minggu ini sudah ada')
@@ -94,7 +95,7 @@ export async function createCycle(
     })
 
     for (const product of products) {
-      const prior = previousPrices.get(product.id)
+      const prior = input.copyPreviousPrices === false ? undefined : previousPrices.get(product.id)
       await tx.weeklyPrice.create({ data: {
         cycleId: cycle.id,
         productId: product.id,
@@ -129,6 +130,45 @@ export async function openCycle(prisma: PrismaClient, input: { actorId: string; 
       (price.consumerPrice ?? price.price).lte(0) || (price.traderPrice ?? price.consumerPrice ?? price.price).lte(0)
     ))
     if (!prices.length || unready.length) throw new ServiceError(422, 'PRICES_NOT_READY', 'Harga dan pemetaan produk aktif belum lengkap', { count: unready.length })
+    const priceMap = new Map(prices.map((price) => [price.productId, price]))
+    const pendingOrders = await tx.order.findMany({ where: { cycleId: input.id }, include: { items: true, payments: true } })
+    const pricedLines: Prisma.Sql[] = []
+    const pricedOrders: { id: string; totalAmount: string }[] = []
+    for (const order of pendingOrders) {
+      if (order.ledgerReconciledAt || order.payments.length) {
+        throw new ServiceError(409, 'DRAFT_LEDGER_CONFLICT', 'Periksa saldo pesanan sebelum mengunci harga minggu ini')
+      }
+      const subtotals: string[] = []
+      for (const item of order.items) {
+        const price = priceMap.get(item.productId)
+        const selected = item.priceType === 'trader' ? (price?.traderPrice ?? price?.consumerPrice ?? price?.price) : (price?.consumerPrice ?? price?.price)
+        if (!selected || selected.lte(0)) throw new ServiceError(422, 'PRICES_NOT_READY', 'Harga pesanan belum lengkap', { productId: item.productId })
+        const unitPrice = selected.toFixed(2)
+        const subtotal = lineSubtotal(unitPrice, item.quantity.toFixed(2))
+        subtotals.push(subtotal)
+        pricedLines.push(Prisma.sql`(${item.id}::uuid, ${unitPrice}::numeric, ${subtotal}::numeric)`)
+      }
+      if (!subtotals.length) throw new ServiceError(422, 'ORDER_ITEMS_REQUIRED', 'Periksa pesanan tanpa produk sebelum mengunci harga')
+      pricedOrders.push({ id: order.id, totalAmount: sumMoney(subtotals) })
+    }
+    if (pricedLines.length) {
+      await tx.$executeRaw`
+        UPDATE order_items AS item SET unit_price = priced.unit_price, subtotal = priced.subtotal
+        FROM (VALUES ${Prisma.join(pricedLines)}) AS priced(id, unit_price, subtotal)
+        WHERE item.id = priced.id
+      `
+      const totals = pricedOrders.map((order) => Prisma.sql`(${order.id}::uuid, ${order.totalAmount}::numeric)`)
+      await tx.$executeRaw`
+        UPDATE orders AS orders SET total_amount = priced.total_amount,
+          ledger_reconciled_at = ${new Date()}, ledger_reconciled_by = ${input.actorId}::uuid,
+          payment_status = 'unpaid', version = orders.version + 1, updated_at = ${new Date()}
+        FROM (VALUES ${Prisma.join(totals)}) AS priced(id, total_amount)
+        WHERE orders.id = priced.id
+      `
+      await tx.auditEvent.createMany({ data: pricedOrders.map((order) => ({
+        actorId: input.actorId, entityType: 'order', entityId: order.id, action: 'priced', after: { totalAmount: order.totalAmount },
+      })) })
+    }
     const updated = await tx.cycle.update({ where: { id: input.id }, data: { periodState: 'open', status: 'open', version: { increment: 1 } }, include: { targets: true } })
     await tx.auditEvent.create({ data: { actorId: input.actorId, entityType: 'cycle', entityId: input.id, action: 'opened', before: { version: cycle.version }, after: { version: updated.version } } })
     return { status: 200, body: cycleDto(updated) }

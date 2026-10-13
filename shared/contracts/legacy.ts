@@ -24,6 +24,7 @@ const legacyCycleSchema = z.object({
   periodState: z.enum(['draft', 'open', 'closed']).nullable().optional(),
   version: z.number().int().optional(),
   rulesVersion: z.number().int().optional(),
+  evaluatedAt: z.iso.datetime().optional(),
 })
 
 export const legacyCyclesSchema = z.array(legacyCycleSchema)

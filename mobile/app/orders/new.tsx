@@ -6,6 +6,8 @@ import { persistentStorage } from '@/lib/auth';
 import { useAuth } from '@/lib/auth-context';
 import { Member, Product, Cycle, WeeklyPrice } from '@/lib/types';
 import { formatCurrency } from '@/lib/utils';
+import { currentWeekStart, cycleTiming, cycleStatusLabel } from '../../../src/lib/domain/calendar';
+import { useBusinessTime } from '../../../shared/use-business-time';
 
 export default function NewOrderScreen() {
   const router = useRouter();
@@ -22,6 +24,8 @@ export default function NewOrderScreen() {
   const [reloadKey, setReloadKey] = useState(0);
   const [cycles, setCycles] = useState<Cycle[]>([]);
   const [currentCycle, setCurrentCycle] = useState<Cycle | null>(null);
+  const now = useBusinessTime(currentCycle?.evaluatedAt);
+  const acceptsOrders = currentCycle ? cycleTiming(currentCycle, now).allowsManagerEntry : false;
   const [orderedMemberIds, setOrderedMemberIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -35,6 +39,7 @@ export default function NewOrderScreen() {
   const [draftReady, setDraftReady] = useState(false);
 
   const draftStorageKey = currentCycle ? `hato.order-draft.${currentCycle.id}` : null;
+  const pricingPending = currentCycle?.periodState === 'draft';
 
   useEffect(() => {
     if (!draftStorageKey) return;
@@ -86,6 +91,7 @@ export default function NewOrderScreen() {
         if (params.cycleId) {
           targetCycle = cyclesData?.find((c: Cycle) => c.id === params.cycleId) || null;
         }
+        if (!targetCycle) targetCycle = cyclesData.find((cycle) => cycle.periodStart.slice(0, 10) === currentWeekStart(new Date())) ?? null;
         if (!targetCycle && dashData?.currentCycle) {
           targetCycle = dashData.currentCycle;
         }
@@ -159,6 +165,7 @@ export default function NewOrderScreen() {
       Alert.alert('Error', 'Tidak ada siklus aktif saat ini.');
       return;
     }
+    if (!acceptsOrders) { setSaveError('Minggu ini belum dimulai atau ditutup manual. Pilih minggu yang dapat dikelola.'); return; }
     if (!selectedMemberId) {
       Alert.alert('Peringatan', 'Silakan pilih anggota terlebih dahulu.');
       return;
@@ -182,7 +189,7 @@ export default function NewOrderScreen() {
     }
 
     const missingPrice = filledProducts.find((product) => !prices[product.id] || prices[product.id].consumerPrice <= 0);
-    if (missingPrice) {
+    if (missingPrice && !pricingPending) {
       setSaveError(`Harga ${missingPrice.name} belum diatur untuk siklus ini.`);
       return;
     }
@@ -237,6 +244,8 @@ export default function NewOrderScreen() {
 
   return (
     <ScrollView style={styles.container} keyboardShouldPersistTaps="handled">
+      <TouchableOpacity accessibilityRole="button" onPress={() => router.push('/cycles/new')} style={styles.cycleInfoCard}><Text style={styles.cycleInfoText}>Mulai minggu ini</Text></TouchableOpacity>
+      {pricingPending ? <View style={styles.warningCard}><Text style={styles.warningText}>Jumlah pesanan dicatat sekarang. Tagihan menunggu harga.</Text><TouchableOpacity accessibilityRole="button" onPress={() => router.push({ pathname: '/cycles/[id]', params: { id: currentCycle!.id } })}><Text style={styles.cycleInfoText}>Isi harga & kunci tagihan</Text></TouchableOpacity></View> : null}
       {operationalSchema === false ? (
         <View style={styles.warningCard}>
           <Text style={styles.warningText}>Mode baca aktif. Input pesanan dinonaktifkan sampai schema operasional diperbarui.</Text>
@@ -265,7 +274,7 @@ export default function NewOrderScreen() {
                     onPress={() => handleSelectCycle(c)}
                   >
                     <Text style={[styles.memberText, isSelected && styles.memberTextSelected]}>
-                      {c.label} ({c.status})
+                      {c.label} · {cycleStatusLabel(cycleTiming(c, now).effectiveStatus)}
                     </Text>
                   </TouchableOpacity>
                 );
@@ -277,7 +286,7 @@ export default function NewOrderScreen() {
 
       {currentCycle ? (
         <View style={styles.cycleInfoCard}>
-          <Text style={styles.cycleInfoText}>Siklus Aktif: <Text style={styles.textBold}>{currentCycle.label} ({currentCycle.status})</Text></Text>
+          <Text style={styles.cycleInfoText}>{currentCycle.label} · <Text style={styles.textBold}>{cycleStatusLabel(cycleTiming(currentCycle, now).effectiveStatus)}</Text></Text>
         </View>
       ) : (
         <View style={styles.warningCard}>
@@ -368,7 +377,7 @@ export default function NewOrderScreen() {
       <View style={styles.summaryCard}>
         <View style={styles.rowBetween}>
           <Text style={styles.summaryLabel}>Total Estimasi:</Text>
-          <Text style={styles.summaryValue}>{formatCurrency(calculateTotal())}</Text>
+          <Text style={styles.summaryValue}>{pricingPending ? 'Menunggu harga' : formatCurrency(calculateTotal())}</Text>
         </View>
       </View>
 
@@ -377,7 +386,7 @@ export default function NewOrderScreen() {
       <TouchableOpacity 
         style={[styles.submitBtn, (!canMutate || submitting || !!loadError || pricesLoading || !!priceError) && styles.submitBtnDisabled]}
         onPress={handleSubmit}
-        disabled={!canMutate || submitting || !!loadError || pricesLoading || !!priceError}
+        disabled={!canMutate || !acceptsOrders || submitting || !!loadError || pricesLoading || !!priceError}
       >
         {submitting ? (
           <ActivityIndicator color="#ffffff" />

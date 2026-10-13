@@ -34,6 +34,7 @@ function Navigation() {
         <Stack.Protected guard={status === 'verified'}>
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
           <Stack.Screen name="cycles/[id]" options={{ title: 'Detail Siklus', headerBackTitle: 'Kembali' }} />
+          <Stack.Screen name="cycles/new" options={{ title: 'Mulai minggu ini', headerBackTitle: 'Kembali' }} />
           <Stack.Screen name="orders/new" options={{ title: 'Buat Pesanan Baru', headerBackTitle: 'Batal', presentation: 'modal' }} />
           <Stack.Screen name="payments/[id]" options={{ title: 'Rincian Pembayaran', headerBackTitle: 'Piutang' }} />
           <Stack.Screen name="members/index" options={{ title: 'Daftar Anggota', headerBackTitle: 'Kembali' }} />

@@ -1,19 +1,23 @@
 'use client'
 
-import { Suspense, useCallback, useEffect, useMemo, useState } from 'react'
+import { Suspense, useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import {
   AlertTriangle, ArrowRight, CalendarDays, CheckCircle2, CircleDollarSign,
   ClipboardList, Clock3, PackageCheck, Plus, RefreshCw, ShoppingBasket, Users,
 } from 'lucide-react'
+import { StartWeekButton } from '@/components/StartWeekButton'
 import { apiGet } from '@/lib/api-client'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { useOperationalMode } from '@/components/AppShell'
+import { currentWeekStart, cycleTiming, cycleStatusLabel } from '@/lib/domain/calendar'
+import { useBusinessTime } from '../../shared/use-business-time'
 
 type CycleSummary = {
+  evaluatedAt?: string
   id: string
   label: string
   periodStart: string
@@ -43,6 +47,7 @@ type TargetSummary = {
 }
 
 type DashboardData = {
+  evaluatedAt?: string
   variants?: Array<{ productId: string; productName: string; unit: string; groupCode: string; demand: string }>
   variantsUnavailable?: boolean
   hasCycle: boolean
@@ -81,19 +86,15 @@ function withCycle(path: string, cycleId: string) {
   return `${path}${path.includes('?') ? '&' : '?'}cycleId=${encodeURIComponent(cycleId)}`
 }
 
-function phaseLabel(state: CycleSummary['periodState']) {
-  if (state === 'draft') return 'Draf'
-  if (state === 'open') return 'Dibuka'
-  if (state === 'closed') return 'Ditutup'
-  return 'Perlu verifikasi'
-}
-
-function nextAction(cycle: CycleSummary) {
+function nextAction(cycle: CycleSummary, now: Date) {
+  const timing = cycleTiming(cycle, now)
+  if (timing.calendarStatus === 'ended') return { title: 'Minggu ini sudah berakhir', detail: 'Data pesanan yang tertinggal dapat dicatat melalui siklus ini. Pengiriman dan pembayaran tetap dapat dikelola.', href: '/payments', label: 'Periksa piutang', icon: CircleDollarSign }
+  if (timing.calendarStatus === 'upcoming') return { title: 'Minggu ini belum dimulai', detail: 'Pencatatan pesanan tersedia mulai Senin pukul 00.00 WIB.', href: `/cycles/${cycle.id}`, label: 'Periksa pengaturan', icon: CalendarDays }
   if (cycle.periodState === 'closed') {
     return { title: 'Ringkasan minggu yang ditutup', detail: 'Lihat pesanan historis dan rincian tagihan pada minggu ini.', href: '/payments', label: 'Periksa piutang', icon: CircleDollarSign }
   }
   if (cycle.periodState === 'draft') {
-    return { title: 'Siapkan minggu ini', detail: 'Periksa target dan harga, lalu buka siklus untuk menerima pesanan.', href: `/cycles/${cycle.id}`, label: 'Buka pengaturan', icon: ClipboardList }
+    return { title: 'Catat pesanan minggu ini', detail: 'Jumlah pesanan bisa dicatat sekarang. Isi dan kunci harga nanti untuk menghitung tagihan.', href: `/cycles/${cycle.id}`, label: 'Isi harga & kunci tagihan', icon: ClipboardList }
   }
   if (!cycle.recapConfirmedAt) {
     return { title: 'Pesanan dan rekap supplier', detail: 'Input pesanan yang masuk. Pada Selasa, periksa pembagian tiap varian lalu konfirmasi rekap.', href: `/cycles/${cycle.id}`, label: 'Periksa rekap', icon: ShoppingBasket }
@@ -169,20 +170,29 @@ function DashboardContent() {
         } catch { result.variantsUnavailable = true }
       }
       setData(result)
-      if (!cycleId && result.currentCycle) router.replace(`/?cycleId=${encodeURIComponent(result.currentCycle.id)}`, { scroll: false })
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Dashboard gagal dimuat.')
     } finally {
       setLoading(false)
     }
-  }, [router])
+  }, [])
+
+  const now = useBusinessTime(data?.evaluatedAt)
+  const weekStart = currentWeekStart(now)
 
   useEffect(() => {
     const task = window.setTimeout(() => { void load(requestedCycleId) }, 0)
     return () => window.clearTimeout(task)
+  }, [load, requestedCycleId, weekStart])
+  useEffect(() => {
+    const sync = () => { if (document.visibilityState === 'visible') void load(requestedCycleId) }
+    window.addEventListener('focus', sync)
+    document.addEventListener('visibilitychange', sync)
+    return () => { window.removeEventListener('focus', sync); document.removeEventListener('visibilitychange', sync) }
   }, [load, requestedCycleId])
   const cycle = data?.currentCycle ?? null
-  const action = useMemo(() => cycle ? nextAction(cycle) : null, [cycle])
+  const timing = cycle ? cycleTiming(cycle, now) : null
+  const action = cycle ? nextAction(cycle, now) : null
 
   if (loading && !data) {
     return <div className="space-y-4" aria-busy="true" aria-label="Memuat ringkasan minggu"><div className="h-24 animate-pulse rounded-xl bg-slate-200/70" /><div className="h-44 animate-pulse rounded-xl bg-slate-200/60" /><div className="grid gap-4 lg:grid-cols-3"><div className="h-64 animate-pulse rounded-xl bg-slate-200/50 lg:col-span-2" /><div className="h-64 animate-pulse rounded-xl bg-slate-200/50" /></div></div>
@@ -203,9 +213,11 @@ function DashboardContent() {
     return (
       <section className="mx-auto mt-12 max-w-2xl border-y border-slate-200 py-12 text-center">
         <CalendarDays className="mx-auto h-8 w-8 text-emerald-800" />
-        <h1 className="mt-4 text-2xl font-black tracking-tight text-slate-950">Mulai minggu pertama</h1>
+        <h1 className="mt-4 text-2xl font-black tracking-tight text-slate-950">Minggu ini belum dimulai</h1>
         <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-600">Buat siklus Senin–Minggu, tentukan target ayam dan tahu, lalu isi harga yang berlaku minggu tersebut.</p>
-        <Link href="/cycles" className="mt-6 inline-flex"><Button size="lg" icon={<Plus className="h-4 w-4" />}>Buat siklus</Button></Link>
+        <p className="mt-2 text-xs text-slate-600">Minggu mulai {formatDate(weekStart)} · WIB</p>
+        <div className="mt-6 flex justify-center"><StartWeekButton /></div>
+        <div className="mt-5 flex flex-wrap justify-center gap-3">{data?.allCycles.slice(0, 4).map((item) => <Link key={item.id} className="min-h-11 text-sm font-semibold text-emerald-800 underline underline-offset-4" href={`/?cycleId=${item.id}`}>{item.label} · {cycleStatusLabel(cycleTiming(item, now).effectiveStatus)}</Link>)}</div>
       </section>
     )
   }
@@ -222,16 +234,16 @@ function DashboardContent() {
           <div>
             <div className="flex flex-wrap items-center gap-2">
               <h1 className="text-xl font-extrabold tracking-tight text-slate-950">{cycle.label}</h1>
-              <Badge variant={cycle.periodState === 'open' ? 'emerald' : cycle.periodState === 'draft' ? 'amber' : 'slate'} dot>{phaseLabel(cycle.periodState)}</Badge>
+              <Badge variant={timing?.calendarStatus === 'current' ? 'emerald' : 'slate'} dot>{cycleStatusLabel(timing!.effectiveStatus)}</Badge>
             </div>
             <p className="mt-1 text-xs text-slate-600">{formatDate(cycle.periodStart)} sampai {formatDate(cycle.periodEnd ?? cycle.deliveryDate)}</p>
           </div>
           <div className="flex w-full flex-col gap-2 @3xl:w-auto @3xl:flex-row @3xl:items-center shrink-0">
             <label htmlFor="cycle-context" className="sr-only">Pilih minggu kerja</label>
             <select id="cycle-context" value={cycle.id} onChange={(event) => router.replace(`/?cycleId=${encodeURIComponent(event.target.value)}`)} disabled={loading} className="min-h-11 min-w-0 max-w-full rounded-lg border border-slate-500 bg-slate-50 px-3 text-sm font-semibold text-slate-800 focus:border-emerald-700">
-              {data.allCycles.map((item) => <option key={item.id} value={item.id}>{item.label} · {phaseLabel(item.periodState)}</option>)}
+              {data.allCycles.map((item) => <option key={item.id} value={item.id}>{item.label} · {cycleStatusLabel(cycleTiming(item, now).effectiveStatus)}</option>)}
             </select>
-            <Button disabled={operationalSchema !== true || cycle.periodState !== 'open'} onClick={() => router.push(cycleHref('/orders?new=1'))} className="w-full @3xl:w-auto whitespace-nowrap" icon={<Plus className="h-4 w-4" />}>Input pesanan</Button>
+            <StartWeekButton /><Button disabled={operationalSchema !== true || !timing?.allowsManagerEntry} onClick={() => router.push(cycleHref('/orders?new=1'))} className="w-full @3xl:w-auto whitespace-nowrap" icon={<Plus className="h-4 w-4" />}>Input pesanan</Button>
           </div>
         </div>
         <dl className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,180px),1fr))] gap-4 rounded-b-xl border-t border-slate-200 bg-slate-50 px-5 py-4">{[{ label: 'Awal minggu', date: cycle.periodStart }, { label: 'Rekap supplier', date: cycle.supplierDeadline }, { label: 'Barang tiba', date: cycle.deliveryDate }].map((stage) => <div key={stage.label}><dt className="text-xs font-semibold text-slate-500">{stage.label}</dt><dd className="mt-1 text-sm font-bold text-slate-900">{stage.date ? formatDate(stage.date, { weekday: 'long', day: 'numeric', month: 'short' }) : 'Belum ditetapkan'}</dd></div>)}</dl>
@@ -280,7 +292,7 @@ function DashboardContent() {
           <div className="flex items-center justify-between gap-3"><h2 id="finance-heading" className="font-extrabold text-slate-950">Uang masuk dan piutang</h2><CircleDollarSign className="h-5 w-5 shrink-0 text-emerald-800" /></div>
           {finances ? (
             <dl className="mt-4">
-              <div className="border-y border-slate-200 bg-slate-50 px-3 py-3"><dt className="text-xs font-semibold text-slate-600">Nilai pesanan</dt><dd className="mt-1 text-xl font-black tabular-nums text-slate-950 [overflow-wrap:anywhere]">{formatCurrency(finances.orderValue)}</dd><p className="mt-1 text-xs text-slate-600">{finances.orderCount} pesanan aktif</p></div>
+              <div className="border-y border-slate-200 bg-slate-50 px-3 py-3"><dt className="text-xs font-semibold text-slate-600">Nilai pesanan</dt><dd className="mt-1 text-xl font-black tabular-nums text-slate-950 [overflow-wrap:anywhere]">{cycle.periodState === 'draft' ? 'Menunggu harga' : formatCurrency(finances.orderValue)}</dd><p className="mt-1 text-xs text-slate-600">{finances.orderCount} pesanan aktif</p></div>
               <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,140px),1fr))] gap-3 py-4">
                 <div className="rounded-lg bg-emerald-50 p-3"><dt className="text-xs font-semibold text-emerald-900">Pembayaran diterima</dt><dd className="mt-1 font-extrabold tabular-nums text-emerald-950 [overflow-wrap:anywhere]">{formatCurrency(finances.receivedPayments)}</dd></div>
                 <div className="rounded-lg bg-rose-50 p-3"><dt className="text-xs font-semibold text-rose-900">Sisa diketahui</dt><dd className="mt-1 font-extrabold tabular-nums text-rose-950 [overflow-wrap:anywhere]">{formatCurrency(finances.knownOutstanding)}</dd></div>
@@ -288,7 +300,7 @@ function DashboardContent() {
               <div className="border-y border-slate-200 py-3"><dt className="text-xs font-semibold text-slate-600">Nilai pembelian terkonfirmasi</dt><dd className="mt-1 text-sm font-bold tabular-nums text-slate-900 [overflow-wrap:anywhere]">{finances.purchaseValue === null ? 'Belum diketahui' : formatCurrency(finances.purchaseValue)}</dd></div>
             </dl>
           ) : <p className="mt-4 text-sm text-slate-600">Ringkasan keuangan belum tersedia.</p>}
-          {finances?.totalIncomplete ? <div className="mt-3 flex gap-2 rounded-lg bg-amber-50 p-3 text-xs leading-5 text-amber-900"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" /><span>{finances.unknownBalanceCount} saldo pesanan lama belum diverifikasi. Total piutang belum lengkap.</span></div> : null}
+          {finances?.totalIncomplete ? <div className="mt-3 flex gap-2 rounded-lg bg-amber-50 p-3 text-xs leading-5 text-amber-900"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" /><span>{finances.unknownBalanceCount} {cycle.periodState === 'draft' ? 'pesanan menunggu harga.' : 'saldo pesanan lama belum diverifikasi.'} Total piutang belum lengkap.</span></div> : null}
           <Link href={cycleHref('/payments')} className="mt-3 inline-flex min-h-11 items-center text-sm font-bold text-emerald-800 hover:text-emerald-950">Buka rincian pembayaran</Link>
         </aside>
 

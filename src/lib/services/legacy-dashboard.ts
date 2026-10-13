@@ -1,5 +1,5 @@
 import { type PrismaClient } from '@prisma/client'
-import { addCalendarDays, businessDate } from '../domain/calendar'
+import { addCalendarDays, businessDate, cycleTiming } from '../domain/calendar'
 import { lineSubtotal, sumMoney } from '../domain/money'
 import { targetProgress } from '../domain/targets'
 import { ServiceError } from './mutation'
@@ -73,7 +73,7 @@ function sumQuantities(values: readonly string[]): string {
   return (total / 100).toFixed(2)
 }
 
-export async function getLegacyDashboardSummary(prisma: PrismaClient, cycleId?: string | null) {
+export async function getLegacyDashboardSummary(prisma: PrismaClient, cycleId?: string | null, now = new Date()) {
   const [cycles, memberCounts] = await Promise.all([
     prisma.$queryRaw<CycleRow[]>`
       SELECT id, label, period_start, order_deadline, delivery_date, status, notes
@@ -85,18 +85,17 @@ export async function getLegacyDashboardSummary(prisma: PrismaClient, cycleId?: 
     `,
   ])
 
-  const today = businessDate(new Date())
+  const today = businessDate(now)
   const selected = cycleId
     ? cycles.find((cycle) => cycle.id === cycleId)
-    : cycles.find((cycle) => dateText(cycle.period_start) <= today && dateText(cycle.delivery_date) >= today)
-      ?? cycles.find((cycle) => cycle.status === 'open')
-      ?? cycles[0]
+    : cycles.find((cycle) => dateText(cycle.period_start) <= today && addCalendarDays(dateText(cycle.period_start), 6) >= today)
 
   if (cycleId && !selected) throw new ServiceError(404, 'CYCLE_NOT_FOUND', 'Siklus tidak ditemukan')
 
   const allCycles = cycles.map((cycle) => {
     const start = dateText(cycle.period_start)
     return {
+      ...cycleTiming({ periodStart: start, periodState: periodState(cycle.status) }, now),
       id: cycle.id,
       label: cycle.label,
       periodStart: start,
@@ -111,7 +110,7 @@ export async function getLegacyDashboardSummary(prisma: PrismaClient, cycleId?: 
 
   const totalMembers = Number(memberCounts[0]?.total ?? 0n)
   if (!selected) {
-    return { hasCycle: false, allCycles, currentCycle: null, targets: [], rotation: null, finances: null, recentOrders: [], totalMembers }
+    return { evaluatedAt: now.toISOString(), hasCycle: false, allCycles, currentCycle: null, targets: [], rotation: null, finances: null, recentOrders: [], totalMembers }
   }
 
   const [targetRows, itemRows, orders, rotationRows, receiptRows] = await Promise.all([
@@ -193,9 +192,11 @@ export async function getLegacyDashboardSummary(prisma: PrismaClient, cycleId?: 
 
   const start = dateText(selected.period_start)
   return {
+    evaluatedAt: now.toISOString(),
     hasCycle: true,
     allCycles,
     currentCycle: {
+      ...cycleTiming({ periodStart: start, periodState: periodState(selected.status) }, now),
       id: selected.id,
       label: selected.label,
       periodStart: start,

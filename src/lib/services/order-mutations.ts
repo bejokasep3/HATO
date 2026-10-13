@@ -1,5 +1,5 @@
 import { type PrismaClient } from '@prisma/client'
-import { canIncreaseOrder, needsConfirmedRecap } from '../domain/calendar'
+import { canRecordOrder, needsRecapForOrderEntry } from '../domain/calendar'
 import { canChangeAllocation } from '../domain/availability'
 import { lineSubtotal, parseScaled, sumMoney } from '../domain/money'
 import { getCycleAvailability } from './availability'
@@ -15,7 +15,7 @@ async function loadLockedOrder(tx: Tx, orderId: string) {
   if (!rows.length) throw new ServiceError(404, 'ORDER_NOT_FOUND', 'Pesanan tidak ditemukan')
   const order = await tx.order.findUniqueOrThrow({ where: { id: orderId }, include: { items: true, payments: true, cycle: { include: { supplierRecap: { select: { id: true } } } } } })
   if (order.cycle.rulesVersion !== 2) throw new ServiceError(409, 'LEGACY_CYCLE_READ_ONLY', 'Pesanan lama perlu direkonsiliasi')
-  if (!order.ledgerReconciledAt) throw new ServiceError(409, 'LEDGER_RECONCILIATION_REQUIRED', 'Saldo pesanan belum diverifikasi')
+  if (!order.ledgerReconciledAt && order.cycle.periodState !== 'draft') throw new ServiceError(409, 'LEDGER_RECONCILIATION_REQUIRED', 'Saldo pesanan belum diverifikasi')
   return order
 }
 
@@ -55,6 +55,7 @@ export async function editOrder(prisma: PrismaClient, input: {
     if (order.cancelledAt) throw new ServiceError(409, 'ORDER_CANCELLED', 'Pulihkan pesanan sebelum mengubahnya')
     if (order.orderStatus === 'shipped' || order.orderStatus === 'delivered') throw new ServiceError(409, 'ORDER_ALREADY_SHIPPED', 'Pesanan yang sudah keluar tidak dapat diubah')
     const cycle = order.cycle
+    const pricingPending = cycle.periodState === 'draft'
     const prices = await tx.weeklyPrice.findMany({ where: { cycleId: order.cycleId }, include: { product: true } })
     const priceMap = new Map(prices.map((price) => [price.productId, price]))
     const oldLine = new Map(order.items.map((item) => [`${item.productId}:${item.priceType}`, item]))
@@ -67,19 +68,19 @@ export async function editOrder(prisma: PrismaClient, input: {
       catch { throw new ServiceError(400, 'INVALID_QUANTITY', 'Jumlah tidak sesuai satuan', { productId: item.productId }) }
       const old = oldLine.get(`${item.productId}:${item.priceType}`)
       const current = item.priceType === 'trader' ? (price.traderPrice ?? price.consumerPrice ?? price.price) : (price.consumerPrice ?? price.price)
-      const unitPrice = old?.unitPrice.toFixed(2) ?? current.toFixed(2)
-      if (parseScaled(unitPrice, 2, 10) === 0n) throw new ServiceError(422, 'PRICE_NOT_READY', 'Harga produk belum siap', { productId: item.productId })
-      return { ...item, unitPrice, subtotal: lineSubtotal(unitPrice, item.quantity) }
+      const unitPrice = pricingPending ? '0.00' : old?.unitPrice.toFixed(2) ?? current.toFixed(2)
+      if (!pricingPending && parseScaled(unitPrice, 2, 10) === 0n) throw new ServiceError(422, 'PRICE_NOT_READY', 'Harga produk belum siap', { productId: item.productId })
+      return { ...item, unitPrice, subtotal: pricingPending ? '0.00' : lineSubtotal(unitPrice, item.quantity) }
     })
     const oldQuantities = quantities(order.items)
     const newQuantities = quantities(nextLines)
     const increasing = [...newQuantities].some(([productId, value]) => value > (oldQuantities.get(productId) ?? 0n))
     if (increasing) {
       const periodStart = cycle.periodStart.toISOString().slice(0, 10)
-      if (cycle.periodState !== 'open' || !canIncreaseOrder(periodStart, 'open', now)) {
-        throw new ServiceError(409, 'ORDER_WINDOW_CLOSED', 'Jatah tidak dapat ditambah setelah minggu ditutup')
+      if (!canRecordOrder(periodStart, cycle.periodState, now)) {
+        throw new ServiceError(409, 'ORDER_WINDOW_CLOSED', 'Jatah tidak dapat ditambah sebelum siklus dimulai atau setelah ditutup manual')
       }
-      if (needsConfirmedRecap(periodStart, Boolean(cycle.supplierRecap), now)) {
+      if (!pricingPending && needsRecapForOrderEntry(periodStart, Boolean(cycle.supplierRecap), now)) {
         throw new ServiceError(409, 'RECAP_REQUIRED', 'Rekap supplier harus dikonfirmasi sebelum menambah pesanan')
       }
       if (cycle.supplierRecap) {
@@ -111,7 +112,7 @@ export async function editOrder(prisma: PrismaClient, input: {
       where: { id: input.id },
       data: {
         totalAmount, notes: input.notes === undefined ? order.notes : input.notes, version: { increment: 1 },
-        paymentStatus: paid === totalAmount ? 'paid' : paid === '0.00' ? 'unpaid' : 'partial',
+        paymentStatus: pricingPending ? 'unpaid' : paid === totalAmount ? 'paid' : paid === '0.00' ? 'unpaid' : 'partial',
       }, include: { items: true },
     })
     await tx.cycle.update({ where: { id: order.cycleId }, data: { version: { increment: 1 } } })
@@ -147,13 +148,14 @@ export async function restoreOrder(prisma: PrismaClient, input: { actorId: strin
     checkVersion(order.version, input.expectedVersion)
     if (!order.cancelledAt) throw new ServiceError(409, 'ORDER_NOT_CANCELLED', 'Pesanan tidak sedang dibatalkan')
     const periodStart = order.cycle.periodStart.toISOString().slice(0, 10)
-    if (order.cycle.periodState !== 'open' || !canIncreaseOrder(periodStart, 'open', now)) throw new ServiceError(409, 'ORDER_WINDOW_CLOSED', 'Pesanan tidak dapat dipulihkan setelah minggu ditutup')
-    if (needsConfirmedRecap(periodStart, Boolean(order.cycle.supplierRecap), now)) throw new ServiceError(409, 'RECAP_REQUIRED', 'Rekap supplier harus dikonfirmasi sebelum memulihkan pesanan')
+    const pricingPending = order.cycle.periodState === 'draft'
+    if (!canRecordOrder(periodStart, order.cycle.periodState, now)) throw new ServiceError(409, 'ORDER_WINDOW_CLOSED', 'Pesanan tidak dapat dipulihkan sebelum siklus dimulai atau setelah ditutup manual')
+    if (!pricingPending && needsRecapForOrderEntry(periodStart, Boolean(order.cycle.supplierRecap), now)) throw new ServiceError(409, 'RECAP_REQUIRED', 'Rekap supplier harus dikonfirmasi sebelum memulihkan pesanan')
     const prices = await tx.weeklyPrice.findMany({ where: { cycleId: order.cycleId } })
     const priceMap = new Map(prices.map((price) => [price.productId, price]))
     for (const item of order.items) {
       const price = priceMap.get(item.productId)
-      if (!price || price.targetGroupSnapshot === null || item.unitPrice.lte(0)) throw new ServiceError(422, 'PRICE_NOT_READY', 'Harga atau mapping produk belum siap', { productId: item.productId })
+      if (!price || price.targetGroupSnapshot === null || (!pricingPending && item.unitPrice.lte(0))) throw new ServiceError(422, 'PRICE_NOT_READY', 'Harga atau mapping produk belum siap', { productId: item.productId })
     }
     if (order.cycle.supplierRecap) {
       const available = await getCycleAvailability(tx, order.cycleId)
@@ -178,6 +180,7 @@ export async function updateFulfillment(prisma: PrismaClient, input: {
   return runIdempotent(prisma, { actorId: input.actorId, operation: 'order.fulfillment', key: input.key, payload: input }, async (tx) => {
     const order = await loadLockedOrder(tx, input.id)
     checkVersion(order.version, input.expectedVersion)
+    if (order.cycle.periodState === 'draft') throw new ServiceError(409, 'PRICES_NOT_READY', 'Isi dan kunci harga sebelum memproses pengiriman')
     if (order.cancelledAt) throw new ServiceError(409, 'ORDER_CANCELLED', 'Pesanan dibatalkan')
     const next = { pending: 'confirmed', confirmed: 'shipped', shipped: 'delivered' }[order.orderStatus]
     if (next !== input.status) throw new ServiceError(409, 'INVALID_FULFILLMENT_TRANSITION', 'Status distribusi harus maju satu langkah')

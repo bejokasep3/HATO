@@ -12,8 +12,11 @@ import { Button } from '@/components/ui/Button'
 import { Modal } from '@/components/ui/Modal'
 import { useOperationalMode } from '@/components/AppShell'
 import { sumMoney } from '@/lib/domain/money'
+import { currentWeekStart, cycleTiming, cycleStatusLabel } from '@/lib/domain/calendar'
+import { useBusinessTime } from '../../../shared/use-business-time'
+import { StartWeekButton } from '@/components/StartWeekButton'
 
-type CycleItem = { id: string; label: string; periodState: 'draft' | 'open' | 'closed' | null }
+type CycleItem = { id: string; label: string; periodStart: string; periodEnd?: string | null; evaluatedAt?: string; periodState: 'draft' | 'open' | 'closed' | null }
 type Member = { id: string; name: string; phone: string; group?: { name: string }; groupName?: string }
 type Product = { id: string; name: string; unit: string; isActive: boolean }
 type Price = { productId: string; consumerPrice: number; traderPrice: number; product: Product }
@@ -21,6 +24,7 @@ type Availability = { items: Array<{ productId: string; availableToOrder: string
 type Order = {
   id: string; cycleId: string; memberId: string; totalAmount: string; orderStatus: string; version: number
   cancelledAt: string | null; createdAt: string
+  pricingPending?: boolean
   member: Member & { group?: { name: string } }
   items: Array<{ id: string; productId: string; quantity: string; unitPrice: string; subtotal: string; priceType?: 'consumer' | 'trader'; product: Product }>
   paymentSummary: { status: 'unverified' | 'unpaid' | 'partial' | 'paid'; paidAmount: string | null; outstandingAmount: string | null }
@@ -58,6 +62,7 @@ function paymentLabel(status: Order['paymentSummary']['status']) {
 }
 
 function OrderPaymentBadge({ order }: { order: Order }) {
+  if (order.pricingPending) return <Badge variant="amber">Menunggu harga</Badge>
   return <Badge variant={order.paymentSummary.status === 'paid' ? 'emerald' : order.paymentSummary.status === 'unverified' ? 'slate' : 'amber'}>{paymentLabel(order.paymentSummary.status)}</Badge>
 }
 
@@ -69,7 +74,7 @@ function deliveryLabel(order: Order) {
 function OrderItems({ order }: { order: Order }) {
   return <ul className="space-y-2">{order.items.map((item) => <li key={item.id}>
     <p className="font-semibold text-slate-900">{item.product.name}</p>
-    <p className="mt-0.5 text-xs text-slate-600">{Number(item.quantity).toLocaleString('id-ID')} {item.product.unit} × {formatCurrency(item.unitPrice)}{item.priceType ? ` · ${item.priceType === 'trader' ? 'Pedagang' : 'Konsumen'}` : ''}</p>
+    <p className="mt-0.5 text-xs text-slate-600">{Number(item.quantity).toLocaleString('id-ID')} {item.product.unit} × {order.pricingPending ? 'harga menyusul' : formatCurrency(item.unitPrice)}{item.priceType ? ` · ${item.priceType === 'trader' ? 'Pedagang' : 'Konsumen'}` : ''}</p>
   </li>)}</ul>
 }
 
@@ -80,6 +85,7 @@ function OrdersContent() {
   const searchParams = useSearchParams()
   const queryCycleId = searchParams.get('cycleId')
   const [cycles, setCycles] = useState<CycleItem[]>([])
+  const now = useBusinessTime(cycles[0]?.evaluatedAt)
   const [cycleId, setCycleId] = useState(queryCycleId ?? '')
   const [orders, setOrders] = useState<Order[]>([])
   const [members, setMembers] = useState<Member[]>([])
@@ -99,7 +105,7 @@ function OrdersContent() {
   const [quantities, setQuantities] = useState<Record<string, string>>({})
   const [notes, setNotes] = useState('')
   const pendingAttempt = useRef<{ signature: string; key: string } | null>(null)
-  const openedFromUrl = useRef(false)
+  const openedFromUrl = useRef<string | null>(null)
   const cycleLoadSequence = useRef(0)
 
   const loadBase = useCallback(async () => {
@@ -112,7 +118,7 @@ function OrdersContent() {
       setCycles(cycleRows)
       setMembers(memberRows)
       setProducts(productRows)
-      setCycleId((current) => current || cycleRows.find((cycle) => cycle.periodState === 'open')?.id || cycleRows[0]?.id || '')
+      setCycleId((current) => current || cycleRows.find((cycle) => cycle.periodStart.slice(0, 10) === currentWeekStart(new Date()))?.id || cycleRows[0]?.id || '')
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'Data pesanan gagal dimuat.') }
     finally { setLoading(false) }
   }, [])
@@ -137,13 +143,15 @@ function OrdersContent() {
     finally { if (sequence === cycleLoadSequence.current) setFormLoading(false) }
   }, [])
 
-  useEffect(() => { const task = window.setTimeout(() => { void loadBase() }, 0); return () => window.clearTimeout(task) }, [loadBase])
+  useEffect(() => {
+    const task = window.setTimeout(() => { if (queryCycleId) setCycleId(queryCycleId); void loadBase() }, 0)
+    return () => window.clearTimeout(task)
+  }, [queryCycleId, loadBase])
   useEffect(() => {
     if (!cycleId) return
     const task = window.setTimeout(() => { void loadCycle(cycleId) }, 0)
-    router.replace(`/orders?cycleId=${encodeURIComponent(cycleId)}`, { scroll: false })
     return () => window.clearTimeout(task)
-  }, [cycleId, loadCycle, router])
+  }, [cycleId, loadCycle])
 
   useEffect(() => {
     if (!cycleId) return
@@ -170,13 +178,15 @@ function OrdersContent() {
   }, [cycleId, memberId, memberSearch, priceType, quantities, notes])
 
   useEffect(() => {
-    if (!openedFromUrl.current && searchParams.get('new') === '1' && cycleId) {
-      openedFromUrl.current = true
+    if (openedFromUrl.current !== cycleId && searchParams.get('new') === '1' && cycleId === queryCycleId) {
+      openedFromUrl.current = cycleId
       setOpen(true)
     }
-  }, [cycleId, searchParams])
+  }, [cycleId, searchParams, queryCycleId])
 
   const selectedCycle = cycles.find((cycle) => cycle.id === cycleId)
+  const pricingPending = selectedCycle?.periodState === 'draft'
+  const acceptsOrders = selectedCycle ? cycleTiming(selectedCycle, now).allowsManagerEntry : false
   const existingMemberIds = useMemo(() => new Set(orders.filter((order) => !order.cancelledAt).map((order) => order.memberId)), [orders])
   const filteredMembers = useMemo(() => {
     const needle = memberSearch.trim().toLocaleLowerCase('id-ID')
@@ -223,7 +233,7 @@ function OrdersContent() {
   }
 
   async function submit(continueEntry: boolean) {
-    if (!canMutate || !cycleId || !memberId || selectedCycle?.periodState !== 'open') return
+    if (!canMutate || !cycleId || !memberId || !acceptsOrders || formLoading) return
     let items: Array<{ productId: string; quantity: string; priceType: 'consumer' | 'trader' }>
     try {
       items = activeProducts.flatMap((product) => {
@@ -240,7 +250,7 @@ function OrdersContent() {
       return
     }
     if (!items.length) { toast.error('Isi jumlah minimal satu produk.'); return }
-    if (items.some((item) => {
+    if (!pricingPending && items.some((item) => {
       const price = priceByProduct.get(item.productId)
       return !price || (item.priceType === 'consumer' ? price.consumerPrice : price.traderPrice) <= 0
     })) { toast.error('Ada harga yang belum siap. Muat ulang sebelum menyimpan.'); return }
@@ -262,17 +272,37 @@ function OrdersContent() {
     <div className="mx-auto max-w-7xl space-y-6">
       <header className="flex flex-col gap-4 rounded-xl border border-slate-200 bg-white p-5 @4xl:flex-row @4xl:items-center @4xl:justify-between">
         <div><h1 className="text-2xl font-extrabold tracking-tight text-slate-950">Manajemen pesanan</h1><p className="mt-2 text-sm text-slate-600">Periksa rincian barang, pembayaran, dan pengiriman pada minggu yang dipilih.</p></div>
-        <div className="flex shrink-0 flex-col gap-2 @xl:flex-row"><label htmlFor="order-cycle" className="sr-only">Pilih siklus</label><select id="order-cycle" value={cycleId} onChange={(event) => { cycleLoadSequence.current += 1; setFormLoading(true); setOrders([]); setCycleId(event.target.value) }} disabled={loading} className="min-h-11 min-w-0 max-w-full rounded-lg border border-slate-500 bg-slate-50 px-3 text-sm font-semibold">{cycles.map((cycle) => <option key={cycle.id} value={cycle.id}>{cycle.label}</option>)}</select><Button onClick={() => setOpen(true)} disabled={!canMutate || !cycleId || selectedCycle?.periodState !== 'open' || loading || formLoading} icon={<Plus className="h-4 w-4" />}>Input pesanan</Button></div>
+        <div className="flex shrink-0 flex-col gap-2 @xl:flex-row">
+          <StartWeekButton />
+          <label htmlFor="order-cycle" className="sr-only">Pilih siklus</label>
+          <select id="order-cycle" value={cycleId} onChange={(event) => {
+            cycleLoadSequence.current += 1
+            setFormLoading(true)
+            setOrders([])
+            setCycleId(event.target.value)
+            router.replace(`/orders?cycleId=${encodeURIComponent(event.target.value)}`, { scroll: false })
+          }} disabled={loading} className="min-h-11 min-w-0 max-w-full rounded-lg border border-slate-500 bg-slate-50 px-3 text-sm font-semibold">
+            {cycles.map((cycle) => <option key={cycle.id} value={cycle.id}>{cycle.label} · {cycleStatusLabel(cycleTiming(cycle, now).effectiveStatus)}</option>)}
+          </select>
+          <Button onClick={() => setOpen(true)} disabled={!canMutate || !cycleId || !acceptsOrders || loading || formLoading} icon={<Plus className="h-4 w-4" />}>Input pesanan</Button>
+        </div>
       </header>
+
+      {pricingPending ? (
+        <div role="status" className="rounded-lg bg-amber-50 p-4 text-sm text-amber-950">
+          Catat jumlah pesanan sekarang. Tagihan belum dihitung.{' '}
+          <Link className="font-bold underline underline-offset-4" href={`/cycles/${cycleId}`}>Isi harga & kunci tagihan</Link>
+        </div>
+      ) : null}
 
       {error ? <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-rose-50 p-3 text-sm text-rose-900"><span className="flex items-center gap-2"><AlertTriangle className="h-4 w-4 shrink-0" />{error}</span><Button size="sm" variant="ghost" onClick={() => void (cycles.length ? loadCycle(cycleId) : loadBase())} icon={<RefreshCw className="h-4 w-4" />}>Coba lagi</Button></div> : null}
 
       <section aria-label="Ringkasan pesanan minggu terpilih" className="rounded-xl border border-slate-200 bg-white p-5">
         <dl className="grid grid-cols-2 gap-4 @3xl:grid-cols-4">
-          {[{ label: 'Pesanan aktif', value: `${summary.count} pesanan`, color: 'text-slate-950' }, { label: 'Nilai pesanan', value: formatCurrency(summary.value), color: 'text-slate-950' }, { label: 'Pembayaran diterima', value: formatCurrency(summary.received), color: 'text-emerald-800' }, { label: 'Sisa diketahui', value: formatCurrency(summary.outstanding), color: 'text-rose-800' }].map((metric) => <div key={metric.label} className="min-w-0"><dt className="text-xs font-semibold text-slate-600">{metric.label}</dt><dd className={`mt-2 text-lg font-extrabold tabular-nums [overflow-wrap:anywhere] @3xl:text-xl ${metric.color}`}>{loading || formLoading || error ? 'Belum tersedia' : metric.value}</dd></div>)}
+          {[{ label: 'Pesanan aktif', value: `${summary.count} pesanan`, color: 'text-slate-950' }, { label: 'Nilai pesanan', value: pricingPending ? 'Menunggu harga' : formatCurrency(summary.value), color: 'text-slate-950' }, { label: 'Pembayaran diterima', value: formatCurrency(summary.received), color: 'text-emerald-800' }, { label: 'Sisa diketahui', value: formatCurrency(summary.outstanding), color: 'text-rose-800' }].map((metric) => <div key={metric.label} className="min-w-0"><dt className="text-xs font-semibold text-slate-600">{metric.label}</dt><dd className={`mt-2 text-lg font-extrabold tabular-nums [overflow-wrap:anywhere] @3xl:text-xl ${metric.color}`}>{loading || formLoading || error ? 'Belum tersedia' : metric.value}</dd></div>)}
         </dl>
         <p className="mt-4 border-t border-slate-200 pt-3 text-xs text-slate-600">Seluruh pesanan aktif pada minggu ini, tidak mengikuti pencarian/filter. Pesanan dibatalkan tidak dihitung.</p>
-        {summary.unknownCount > 0 ? <p role="status" className="mt-2 text-sm font-semibold text-amber-900">{summary.unknownCount} saldo belum diverifikasi. Total pembayaran dan sisa belum lengkap.</p> : null}
+        {summary.unknownCount > 0 ? <p role="status" className="mt-2 text-sm font-semibold text-amber-900">{summary.unknownCount} {pricingPending ? 'pesanan menunggu harga.' : 'saldo belum diverifikasi.'} Total pembayaran dan sisa belum lengkap.</p> : null}
       </section>
 
       <section aria-label="Cari dan filter pesanan" className="grid gap-3 rounded-xl border border-slate-200 bg-white p-4 @4xl:grid-cols-[minmax(0,1fr)_auto]">
@@ -287,7 +317,7 @@ function OrdersContent() {
             {filteredOrders.map((order) => <article key={order.id} className="min-w-0 rounded-xl border border-slate-200 bg-white p-4">
               <div className="flex flex-wrap items-start justify-between gap-3"><div className="min-w-0"><h2 className="break-words font-extrabold text-slate-950">{order.member.name}</h2><p className="mt-1 break-words text-xs text-slate-600">{order.member.group?.name ?? order.member.groupName ?? 'Tanpa kelompok'}</p></div><OrderPaymentBadge order={order} /></div>
               <div className="mt-4 border-y border-slate-200 py-3 text-sm"><OrderItems order={order} /></div>
-              <dl className="mt-4 grid grid-cols-[repeat(auto-fit,minmax(min(100%,120px),1fr))] gap-3"><div><dt className="text-xs text-slate-600">Nilai pesanan</dt><dd className="mt-1 font-extrabold tabular-nums [overflow-wrap:anywhere]">{formatCurrency(order.totalAmount)}</dd></div><div><dt className="text-xs text-slate-600">Sisa</dt><dd className="mt-1 font-bold tabular-nums [overflow-wrap:anywhere]">{order.paymentSummary.outstandingAmount === null ? 'Belum diketahui' : formatCurrency(order.paymentSummary.outstandingAmount)}</dd></div><div><dt className="text-xs text-slate-600">Pengiriman</dt><dd className="mt-1 text-sm font-semibold">{deliveryLabel(order)}</dd></div></dl>
+              <dl className="mt-4 grid grid-cols-[repeat(auto-fit,minmax(min(100%,120px),1fr))] gap-3"><div><dt className="text-xs text-slate-600">Nilai pesanan</dt><dd className="mt-1 font-extrabold tabular-nums [overflow-wrap:anywhere]">{order.pricingPending ? 'Menunggu harga' : formatCurrency(order.totalAmount)}</dd></div><div><dt className="text-xs text-slate-600">Sisa</dt><dd className="mt-1 font-bold tabular-nums [overflow-wrap:anywhere]">{order.paymentSummary.outstandingAmount === null ? 'Belum diketahui' : formatCurrency(order.paymentSummary.outstandingAmount)}</dd></div><div><dt className="text-xs text-slate-600">Pengiriman</dt><dd className="mt-1 text-sm font-semibold">{deliveryLabel(order)}</dd></div></dl>
               <Link href={`/payments?cycleId=${encodeURIComponent(cycleId)}&orderId=${encodeURIComponent(order.id)}`} className="mt-3 inline-flex min-h-11 items-center text-sm font-bold text-emerald-800 hover:text-emerald-950">Lihat pembayaran<span className="sr-only"> {order.member.name}</span></Link>
             </article>)}
           </div>
@@ -298,7 +328,7 @@ function OrdersContent() {
               <tbody className="divide-y divide-slate-200">{filteredOrders.map((order) => <tr key={order.id} className="align-top hover:bg-slate-50">
                 <th scope="row" className="max-w-48 px-4 py-4"><span className="break-words font-bold text-slate-950">{order.member.name}</span><p className="mt-1 break-words text-xs font-normal text-slate-600">{order.member.group?.name ?? order.member.groupName ?? 'Tanpa kelompok'}</p></th>
                 <td className="min-w-44 px-4 py-4"><OrderItems order={order} /></td>
-                <td className="px-4 py-4 font-bold tabular-nums whitespace-nowrap">{formatCurrency(order.totalAmount)}</td>
+                <td className="px-4 py-4 font-bold tabular-nums whitespace-nowrap">{order.pricingPending ? 'Menunggu harga' : formatCurrency(order.totalAmount)}</td>
                 <td className="px-4 py-4"><OrderPaymentBadge order={order} /></td>
                 <td className="px-4 py-4 font-semibold tabular-nums whitespace-nowrap">{order.paymentSummary.outstandingAmount === null ? 'Belum diketahui' : formatCurrency(order.paymentSummary.outstandingAmount)}</td>
                 <td className="px-4 py-4 text-slate-700">{deliveryLabel(order)}</td>
@@ -314,10 +344,10 @@ function OrdersContent() {
         <div className="space-y-5">
           <section><label htmlFor="member-search" className="text-sm font-bold text-slate-800">Cari anggota</label><div className="relative mt-1.5"><Search className="pointer-events-none absolute left-3 top-3.5 h-4 w-4 text-slate-400" /><input id="member-search" autoComplete="off" value={memberSearch} onChange={(event) => setMemberSearch(event.target.value)} placeholder="Nama atau kelompok" className="min-h-11 w-full rounded-lg border border-slate-300 pl-9 pr-3 text-sm" /></div><div className="mt-2 max-h-36 divide-y divide-slate-100 overflow-y-auto border-y border-slate-200">{filteredMembers.map((member) => { const existing = existingMemberIds.has(member.id); return <button key={member.id} type="button" disabled={existing} onClick={() => { setMemberId(member.id); setMemberSearch(member.name) }} className={`flex min-h-11 w-full items-center justify-between gap-3 px-2 text-left text-sm ${memberId === member.id ? 'bg-emerald-50 text-emerald-950' : 'hover:bg-slate-50'} disabled:cursor-not-allowed disabled:opacity-50`}><span><strong>{member.name}</strong><span className="ml-2 text-xs text-slate-500">{member.group?.name ?? member.groupName}</span></span>{existing ? <span className="text-xs font-semibold">Sudah pesan</span> : memberId === member.id ? <CheckCircle2 className="h-4 w-4 text-emerald-700" /> : null}</button>})}</div></section>
 
-          <section><div className="flex flex-wrap items-center justify-between gap-3"><div><h3 className="text-sm font-bold text-slate-800">Produk dan jumlah</h3><p className="mt-1 text-xs text-slate-500">Kosongkan produk yang tidak dipesan.</p></div><div className="inline-flex rounded-lg bg-slate-100 p-1"><button type="button" onClick={() => setPriceType('consumer')} aria-pressed={priceType === 'consumer'} className={`min-h-11 rounded-md px-3 text-xs font-bold sm:min-h-8 ${priceType === 'consumer' ? 'bg-white text-slate-950 shadow-sm' : 'text-slate-600'}`}>Konsumen</button><button type="button" onClick={() => setPriceType('trader')} aria-pressed={priceType === 'trader'} className={`min-h-11 rounded-md px-3 text-xs font-bold sm:min-h-8 ${priceType === 'trader' ? 'bg-white text-slate-950 shadow-sm' : 'text-slate-600'}`}>Pedagang</button></div></div><div className="mt-3 divide-y divide-slate-100 border-y border-slate-200">{activeProducts.map((product) => { const price = priceByProduct.get(product.id)!; const stock = availabilityByProduct.get(product.id); const activePrice = priceType === 'consumer' ? price.consumerPrice : price.traderPrice; return <div key={product.id} className="grid gap-2 py-3 sm:grid-cols-[1fr_auto] sm:items-center"><div><p className="text-sm font-bold text-slate-900">{product.name}</p><p className="text-xs text-slate-500">{formatCurrency(activePrice)} / {product.unit}{stock?.availableToOrder !== null && stock?.availableToOrder !== undefined ? ` · tersedia ${Number(stock.availableToOrder).toLocaleString('id-ID')}` : ' · jatah belum dikunci'}</p></div><label className="flex items-center justify-end gap-2 text-xs font-semibold text-slate-600"><span className="sr-only">Jumlah {product.name}</span><input inputMode={product.unit === 'bungkus' ? 'numeric' : 'decimal'} value={quantities[product.id] ?? ''} onChange={(event) => setQuantities((current) => ({ ...current, [product.id]: event.target.value.replace(',', '.') }))} placeholder="0" className="min-h-11 w-24 rounded-lg border border-slate-300 px-3 text-right text-sm font-bold tabular-nums" /><span className="w-16">{product.unit}</span></label></div>})}{activeProducts.length === 0 ? <p className="py-5 text-sm text-amber-800">Harga siklus belum tersedia. Pesanan belum dapat disimpan.</p> : null}</div></section>
+          <section><div className="flex flex-wrap items-center justify-between gap-3"><div><h3 className="text-sm font-bold text-slate-800">Produk dan jumlah</h3><p className="mt-1 text-xs text-slate-500">Kosongkan produk yang tidak dipesan.</p></div><div className="inline-flex rounded-lg bg-slate-100 p-1"><button type="button" onClick={() => setPriceType('consumer')} aria-pressed={priceType === 'consumer'} className={`min-h-11 rounded-md px-3 text-xs font-bold sm:min-h-8 ${priceType === 'consumer' ? 'bg-white text-slate-950 shadow-sm' : 'text-slate-600'}`}>Konsumen</button><button type="button" onClick={() => setPriceType('trader')} aria-pressed={priceType === 'trader'} className={`min-h-11 rounded-md px-3 text-xs font-bold sm:min-h-8 ${priceType === 'trader' ? 'bg-white text-slate-950 shadow-sm' : 'text-slate-600'}`}>Pedagang</button></div></div><div className="mt-3 divide-y divide-slate-100 border-y border-slate-200">{activeProducts.map((product) => { const price = priceByProduct.get(product.id)!; const stock = availabilityByProduct.get(product.id); const activePrice = priceType === 'consumer' ? price.consumerPrice : price.traderPrice; return <div key={product.id} className="grid gap-2 py-3 sm:grid-cols-[1fr_auto] sm:items-center"><div><p className="text-sm font-bold text-slate-900">{product.name}</p><p className="text-xs text-slate-500">{pricingPending ? 'Harga menyusul' : formatCurrency(activePrice)} / {product.unit}{stock?.availableToOrder !== null && stock?.availableToOrder !== undefined ? ` · tersedia ${Number(stock.availableToOrder).toLocaleString('id-ID')}` : ' · jatah belum dikunci'}</p></div><label className="flex items-center justify-end gap-2 text-xs font-semibold text-slate-600"><span className="sr-only">Jumlah {product.name}</span><input inputMode={product.unit === 'bungkus' ? 'numeric' : 'decimal'} value={quantities[product.id] ?? ''} onChange={(event) => setQuantities((current) => ({ ...current, [product.id]: event.target.value.replace(',', '.') }))} placeholder="0" className="min-h-11 w-24 rounded-lg border border-slate-300 px-3 text-right text-sm font-bold tabular-nums" /><span className="w-16">{product.unit}</span></label></div>})}{activeProducts.length === 0 ? <p className="py-5 text-sm text-amber-800">Produk minggu ini belum tersedia. Periksa pengaturan minggu.</p> : null}</div></section>
 
           <label className="block text-sm font-bold text-slate-800">Catatan <span className="font-normal text-slate-500">(opsional)</span><textarea value={notes} onChange={(event) => setNotes(event.target.value)} rows={2} className="mt-1.5 w-full rounded-lg border border-slate-300 p-3 text-sm" /></label>
-          <div className="flex flex-col gap-3 border-t border-slate-200 pt-4 sm:flex-row sm:items-center sm:justify-between"><div><p className="text-xs font-semibold text-slate-500">Total perkiraan</p><p className="text-xl font-black tabular-nums text-slate-950">{formatCurrency(total)}</p><p className="text-xs text-slate-500">Server menghitung ulang dari snapshot harga.</p></div><div className="flex flex-col-reverse gap-2 sm:flex-row"><Button variant="secondary" disabled={!canMutate || submitting || !memberId || !activeProducts.length} onClick={() => void submit(true)}>{submitting ? 'Menyimpan…' : 'Simpan & berikutnya'}</Button><Button disabled={!canMutate || submitting || !memberId || !activeProducts.length} onClick={() => void submit(false)}>{submitting ? 'Menyimpan…' : 'Simpan'}</Button></div></div>
+          <div className="flex flex-col gap-3 border-t border-slate-200 pt-4 sm:flex-row sm:items-center sm:justify-between"><div><p className="text-xs font-semibold text-slate-500">Total perkiraan</p><p className="text-xl font-black tabular-nums text-slate-950">{pricingPending ? 'Menunggu harga' : formatCurrency(total)}</p><p className="text-xs text-slate-500">Tagihan dihitung setelah harga diisi dan minggu dibuka.</p></div><div className="flex flex-col-reverse gap-2 sm:flex-row"><Button variant="secondary" disabled={!canMutate || submitting || !memberId || !activeProducts.length} onClick={() => void submit(true)}>{submitting ? 'Menyimpan…' : 'Simpan & berikutnya'}</Button><Button disabled={!canMutate || submitting || !memberId || !activeProducts.length} onClick={() => void submit(false)}>{submitting ? 'Menyimpan…' : 'Simpan'}</Button></div></div>
         </div>
       </Modal>
     </div>

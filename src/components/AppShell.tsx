@@ -20,6 +20,8 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Toaster } from 'sonner'
+import { cycleTiming, cycleStatusLabel } from '@/lib/domain/calendar'
+import { useBusinessTime } from '../../shared/use-business-time'
 
 interface AppShellProps {
   children: React.ReactNode
@@ -37,7 +39,7 @@ const navItems = [
   { href: '/ranking', label: 'Peringkat & Skor', icon: Trophy },
 ]
 
-type CycleNavItem = { id: string; label: string; periodState?: string; supplierDeadline?: string | null }
+type CycleNavItem = { id: string; label: string; periodStart: string; periodEnd?: string | null; evaluatedAt?: string; periodState?: string | null; status?: string; supplierDeadline?: string | null }
 
 type OperationalMode = { operationalSchema: boolean | null }
 const OperationalModeContext = createContext<OperationalMode>({ operationalSchema: null })
@@ -53,6 +55,7 @@ function AppShellContent({ children }: AppShellProps) {
   const cycleId = searchParams.get('cycleId')
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [cycles, setCycles] = useState<CycleNavItem[]>([])
+  const now = useBusinessTime(cycles[0]?.evaluatedAt)
   const [operationalSchema, setOperationalSchema] = useState<boolean | null>(null)
   const activeCycle = useMemo(() => cycles.find((cycle) => cycle.id === cycleId) ?? null, [cycleId, cycles])
 
@@ -161,7 +164,7 @@ function AppShellContent({ children }: AppShellProps) {
                 <CalendarDays className="w-3.5 h-3.5 text-emerald-700 shrink-0" />
                 <span className="text-xs font-bold text-slate-800 tracking-tight">Konteks kerja</span>
               </div>
-              {activeCycle?.periodState ? <span className="text-[10px] font-semibold uppercase text-emerald-800">{activeCycle.periodState}</span> : null}
+              {activeCycle ? <span className="text-[10px] font-semibold text-slate-700">{cycleStatusLabel(cycleTiming(activeCycle, now).effectiveStatus)}</span> : null}
             </div>
             <p className="text-[11px] text-slate-600 font-semibold leading-4">{activeCycle?.label ?? 'Pilih minggu di dashboard'}</p>
             {activeCycle ? <Link href={hrefWithCycle('/')} className="mt-2 inline-flex text-[10px] font-bold text-emerald-800 hover:text-emerald-950">Ganti minggu</Link> : null}

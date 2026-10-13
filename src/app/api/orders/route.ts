@@ -28,7 +28,7 @@ async function GETImpl(request: NextRequest) {
     const orders = await prisma.order.findMany({
       where,
       include: {
-        cycle: { select: { id: true, label: true, status: true } },
+        cycle: { select: { id: true, label: true, status: true, periodState: true, rulesVersion: true } },
         member: { include: { group: true } },
         items: { include: { product: true } },
         payments: true,
@@ -43,6 +43,7 @@ async function GETImpl(request: NextRequest) {
       )
       return {
         ...order,
+        pricingPending: order.cycle.rulesVersion === 2 && order.cycle.periodState === 'draft',
         totalAmount: order.totalAmount.toFixed(2),
         paymentStatus: summary.status,
         paymentSummary: summary,

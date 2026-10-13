@@ -10,7 +10,8 @@ import {
   Linking,
 } from 'react-native';
 import { getReports } from '@/lib/api';
-import { formatCurrency, formatDate, getWhatsAppUrl } from '@/lib/utils';
+import { formatDate, getWhatsAppUrl } from '@/lib/utils';
+import { reportCurrency as formatCurrency, reportNumber, reportPercent } from '../../../shared/report-display';
 
 export default function MobileReportsScreen() {
   const [activeTab, setActiveTab] = useState<'targets' | 'financial' | 'receivable'>('targets');
@@ -63,6 +64,8 @@ export default function MobileReportsScreen() {
       style={styles.container}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
     >
+      <Text style={{ color: "#64748b", fontSize: 12, marginBottom: 12 }}>Stok dan modal yang belum dikonfirmasi ditampilkan sebagai belum diketahui.</Text>
+      {(activeTab === "financial" ? financialData : activeTab === "receivable" ? receivableData : null)?.unknownBalanceCount > 0 ? <Text style={{ color: "#92400e", fontSize: 12, marginBottom: 12 }}>Sebagian saldo belum diverifikasi atau menunggu harga. Penagihan hanya untuk sisa tagihan terverifikasi.</Text> : null}
       {/* Tab Switcher */}
       <View style={styles.tabContainer}>
         <TouchableOpacity
@@ -99,33 +102,33 @@ export default function MobileReportsScreen() {
             <View style={styles.kpiCard}>
               <Text style={styles.kpiLabel}>Target Ayam Campur</Text>
               <Text style={[styles.kpiValue, { color: '#059669' }]}>
-                {targetData.summary.chickenSuccessRate}% Sukses
+                {reportPercent(targetData.summary.chickenSuccessRate)} Sukses
               </Text>
-              <Text style={{ fontSize: 10, color: '#64748b', marginTop: 2 }}>20 kg / minggu</Text>
+              <Text style={{ fontSize: 10, color: '#64748b', marginTop: 2 }}>Sesuai target tiap siklus</Text>
             </View>
 
             <View style={[styles.kpiCard, { backgroundColor: '#fffbeb', borderColor: '#fef3c7' }]}>
               <Text style={[styles.kpiLabel, { color: '#b45309' }]}>Sisa Ayam Terkini</Text>
               <Text style={[styles.kpiValue, { color: '#d97706' }]}>
-                {targetData.summary.currentChickenLeftover} kg
+                {reportNumber(targetData.summary.currentChickenLeftover)} kg
               </Text>
-              <Text style={{ fontSize: 10, color: '#b45309', marginTop: 2 }}>Stok bawaan minggu depan</Text>
+              <Text style={{ fontSize: 10, color: '#b45309', marginTop: 2 }}>Stok fisik tercatat</Text>
             </View>
 
             <View style={styles.kpiCard}>
               <Text style={styles.kpiLabel}>Target Tahu Campur</Text>
               <Text style={[styles.kpiValue, { color: '#2563eb' }]}>
-                {targetData.summary.tofuSuccessRate}% Sukses
+                {reportPercent(targetData.summary.tofuSuccessRate)} Sukses
               </Text>
-              <Text style={{ fontSize: 10, color: '#64748b', marginTop: 2 }}>20 bks / minggu</Text>
+              <Text style={{ fontSize: 10, color: '#64748b', marginTop: 2 }}>Sesuai target tiap siklus</Text>
             </View>
 
             <View style={[styles.kpiCard, { backgroundColor: '#fffbeb', borderColor: '#fef3c7' }]}>
               <Text style={[styles.kpiLabel, { color: '#b45309' }]}>Sisa Tahu Terkini</Text>
               <Text style={[styles.kpiValue, { color: '#d97706' }]}>
-                {targetData.summary.currentTofuLeftover} bks
+                {reportNumber(targetData.summary.currentTofuLeftover)} bks
               </Text>
-              <Text style={{ fontSize: 10, color: '#b45309', marginTop: 2 }}>Stok bawaan minggu depan</Text>
+              <Text style={{ fontSize: 10, color: '#b45309', marginTop: 2 }}>Stok fisik tercatat</Text>
             </View>
           </View>
 
@@ -142,18 +145,18 @@ export default function MobileReportsScreen() {
               <View style={{ backgroundColor: '#f8fafc', padding: 10, borderRadius: 8, marginTop: 6 }}>
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                   <Text style={{ fontSize: 13, fontWeight: 'bold', color: '#0f172a' }}>🍗 Ayam Campur</Text>
-                  <Text style={{ fontSize: 11, fontWeight: 'bold', color: r.chicken.isMet ? '#059669' : '#d97706' }}>
-                    {r.chicken.isMet ? '✅ Tercapai' : `❌ Kurang ${r.chicken.shortfall}kg`}
+                  <Text style={{ fontSize: 11, fontWeight: 'bold', color: r.chicken.isMet === null ? 'Belum diketahui' : r.chicken.isMet ? '#059669' : '#d97706' }}>
+                    {r.chicken.isMet === null ? 'Belum diketahui' : r.chicken.isMet ? '✅ Tercapai' : `❌ Kurang ${reportNumber(r.chicken.shortfall)}kg`}
                   </Text>
                 </View>
                 <Text style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>
-                  Terjual: <Text style={{ fontWeight: 'bold', color: '#0f172a' }}>{r.chicken.sold}</Text> / {r.chicken.target} kg
+                  Terjual: <Text style={{ fontWeight: 'bold', color: '#0f172a' }}>{reportNumber(r.chicken.sold)}</Text> / {reportNumber(r.chicken.target)} kg
                   {' '}(Karkas {r.chicken.breakdown.karkas}, Recah {r.chicken.breakdown.recah}, Gebrus {r.chicken.breakdown.gebrus})
                 </Text>
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 4, paddingTop: 4, borderTopWidth: 1, borderColor: '#e2e8f0' }}>
-                  <Text style={{ fontSize: 11, color: '#475569' }}>Stok Awal: {r.chicken.beginningStock} kg</Text>
+                  <Text style={{ fontSize: 11, color: '#475569' }}>Stok Awal: {reportNumber(r.chicken.beginningStock)} kg</Text>
                   <Text style={{ fontSize: 11, fontWeight: 'bold', color: '#b45309' }}>
-                    Sisa Akhir: {r.chicken.endingStock} kg
+                    Sisa Akhir: {reportNumber(r.chicken.endingStock)} kg
                   </Text>
                 </View>
               </View>
@@ -162,18 +165,18 @@ export default function MobileReportsScreen() {
               <View style={{ backgroundColor: '#f8fafc', padding: 10, borderRadius: 8, marginTop: 8 }}>
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                   <Text style={{ fontSize: 13, fontWeight: 'bold', color: '#0f172a' }}>🧈 Tahu Campur</Text>
-                  <Text style={{ fontSize: 11, fontWeight: 'bold', color: r.tofu.isMet ? '#059669' : '#d97706' }}>
-                    {r.tofu.isMet ? '✅ Tercapai' : `❌ Kurang ${r.tofu.shortfall}bks`}
+                  <Text style={{ fontSize: 11, fontWeight: 'bold', color: r.tofu.isMet === null ? 'Belum diketahui' : r.tofu.isMet ? '#059669' : '#d97706' }}>
+                    {r.tofu.isMet === null ? 'Belum diketahui' : r.tofu.isMet ? '✅ Tercapai' : `❌ Kurang ${reportNumber(r.tofu.shortfall)}bks`}
                   </Text>
                 </View>
                 <Text style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>
-                  Terjual: <Text style={{ fontWeight: 'bold', color: '#0f172a' }}>{r.tofu.sold}</Text> / {r.tofu.target} bks
+                  Terjual: <Text style={{ fontWeight: 'bold', color: '#0f172a' }}>{reportNumber(r.tofu.sold)}</Text> / {reportNumber(r.tofu.target)} bks
                   {r.tofu.breakdown ? ` (Kuning ${r.tofu.breakdown.kuning}, Putih ${r.tofu.breakdown.putih})` : ''}
                 </Text>
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 4, paddingTop: 4, borderTopWidth: 1, borderColor: '#e2e8f0' }}>
-                  <Text style={{ fontSize: 11, color: '#475569' }}>Stok Awal: {r.tofu.beginningStock} bks</Text>
+                  <Text style={{ fontSize: 11, color: '#475569' }}>Stok Awal: {reportNumber(r.tofu.beginningStock)} bks</Text>
                   <Text style={{ fontSize: 11, fontWeight: 'bold', color: '#b45309' }}>
-                    Sisa Akhir: {r.tofu.endingStock} bks
+                    Sisa Akhir: {reportNumber(r.tofu.endingStock)} bks
                   </Text>
                 </View>
               </View>
@@ -204,7 +207,7 @@ export default function MobileReportsScreen() {
             <View style={[styles.kpiCard, { backgroundColor: '#ecfdf5' }]}>
               <Text style={[styles.kpiLabel, { color: '#065f46' }]}>Margin Kotor</Text>
               <Text style={[styles.kpiValue, { color: '#059669' }]}>
-                {formatCurrency(financialData.summary.totalGrossMargin)} ({financialData.summary.overallMarginPct}%)
+                {formatCurrency(financialData.summary.totalGrossMargin)} ({reportPercent(financialData.summary.overallMarginPct)})
               </Text>
             </View>
 
@@ -230,7 +233,7 @@ export default function MobileReportsScreen() {
               </View>
               <View style={styles.cycleRow}>
                 <Text style={[styles.cycleMetric, { color: '#059669', fontWeight: 'bold' }]}>
-                  Margin: {formatCurrency(c.grossMargin)} ({c.marginPct}%)
+                  Margin: {formatCurrency(c.grossMargin)} ({reportPercent(c.marginPct)})
                 </Text>
                 <Text style={[styles.cycleMetric, { color: '#e11d48' }]}>
                   Piutang: {formatCurrency(c.unpaidRevenue)}
