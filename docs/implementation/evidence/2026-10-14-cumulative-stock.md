@@ -1,0 +1,9 @@
+# Cumulative stock on the dashboard
+
+The manager requested remaining stock across all weeks, including earlier leftovers. The dashboard now displays separate Ayam and Tahu balances above the selected week's target panel. It labels the included week count and WIB cutoff date, so this global balance remains distinct from the selected week's progress. The same panel is available when no current week has been started.
+
+Incoming quantities are summed once from each eligible cycle's group targets. Active order quantities are aggregated separately, avoiding multiplication of target rows by order items. The balance is total incoming minus total ordered; future weeks and cancelled orders are excluded. Operational orders use their frozen product group snapshots, while imported orders use the approved product mapping. NONE products are excluded. Payment or delivery status does not change how an active order reserves quantity.
+
+A missing incoming target or unmapped order item produces an incomplete balance rather than a false zero. Explicit zero targets are valid. Oversold balances display the shortage instead of clamping it away. No production data or schema changes are required.
+
+Validation: the dedicated isolated hato_stock integration case verifies carryover across two completed/closed weeks, one delivery counted once despite multiple orders, future-week and cancelled-order exclusion, snapshot grouping, NONE exclusion, missing targets, explicit zero/negative balances, unknown mapping, WIB midnight cutoff and display data without a current week. It also verifies no audit or mutation writes during reads. Another 32 domain/contract/reader checks passed on the isolated hato_recap database. Changed-file lint and web production build were checked before release. A read-only production calculation returned six included weeks with complete data: Ayam 95 received minus 60 ordered = 35 kg; Tahu 90 received minus 53 ordered = 37 bungkus at verification time.

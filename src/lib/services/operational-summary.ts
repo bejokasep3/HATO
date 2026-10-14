@@ -5,6 +5,7 @@ import { paymentSummary } from '../domain/payments'
 import { targetProgress } from '../domain/targets'
 import { ServiceError } from './mutation'
 import { getLegacyDashboardSummary } from './legacy-dashboard'
+import { getCumulativeStock } from './cumulative-stock'
 
 export async function getCycleSummary(prisma: PrismaClient, cycleId: string, now = new Date()) {
   const cycle = await prisma.cycle.findUnique({
@@ -112,12 +113,13 @@ export async function getDashboardSummary(prisma: PrismaClient, cycleId?: string
   `
   if (!schema?.operational) return getLegacyDashboardSummary(prisma, cycleId, now)
 
-  const [cycles, totalMembers] = await Promise.all([
+  const [cycles, totalMembers, cumulativeStock] = await Promise.all([
     prisma.cycle.findMany({ orderBy: { periodStart: 'desc' }, select: {
       id: true, label: true, periodStart: true, periodEnd: true, periodState: true,
       supplierDeadline: true, deliveryDate: true, status: true, rulesVersion: true,
     } }),
     prisma.member.count({ where: { isActive: true } }),
+    getCumulativeStock(prisma, now),
   ])
   const selected = cycleId
     ? cycles.find((cycle) => cycle.id === cycleId)
@@ -131,7 +133,7 @@ export async function getDashboardSummary(prisma: PrismaClient, cycleId?: string
     deliveryDate: cycle.deliveryDate.toISOString().slice(0, 10),
     periodState: cycle.periodState, status: cycle.status, rulesVersion: cycle.rulesVersion,
   }))
-  if (!selected) return { evaluatedAt: now.toISOString(), hasCycle: false, allCycles, currentCycle: null, targets: [], orderedMembers: [], rotation: null, finances: null, recentOrders: [], totalMembers }
+  if (!selected) return { evaluatedAt: now.toISOString(), hasCycle: false, allCycles, currentCycle: null, targets: [], orderedMembers: [], rotation: null, finances: null, recentOrders: [], totalMembers, cumulativeStock }
   const summary = await getCycleSummary(prisma, selected.id, now)
-  return { evaluatedAt: now.toISOString(), hasCycle: true, allCycles, currentCycle: summary.cycle, targets: summary.targets, orderedMembers: summary.orderedMembers, rotation: summary.rotation, finances: summary.finances, recentOrders: summary.recentOrders, totalMembers }
+  return { evaluatedAt: now.toISOString(), hasCycle: true, allCycles, currentCycle: summary.cycle, targets: summary.targets, orderedMembers: summary.orderedMembers, rotation: summary.rotation, finances: summary.finances, recentOrders: summary.recentOrders, totalMembers, cumulativeStock }
 }

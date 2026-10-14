@@ -47,6 +47,11 @@ type TargetSummary = {
 }
 
 type DashboardData = {
+  cumulativeStock?: {
+    asOfDate: string
+    includedWeekCount: number
+    groups: Array<{ groupCode: string; unit: string; incomingQuantity: string; orderedQuantity: string; remainingQuantity: string | null; missingWeekCount: number; unmappedItemCount: number }>
+  }
   evaluatedAt?: string
   variants?: Array<{ productId: string; productName: string; unit: string; groupCode: string; demand: string }>
   variantsUnavailable?: boolean
@@ -134,6 +139,17 @@ function TargetPanel({ target, variants }: { target: TargetSummary; variants: No
   )
 }
 
+function CumulativeStockPanel({ stock }: { stock: DashboardData['cumulativeStock'] }) {
+  if (!stock) return null
+  return <section className="overflow-hidden rounded-xl border border-slate-200 bg-white" aria-labelledby="cumulative-stock-heading">
+    <div className="border-b border-slate-200 p-5"><h2 id="cumulative-stock-heading" className="text-lg font-extrabold text-slate-950">Sisa barang kumulatif</h2><p className="mt-1 text-sm text-slate-600">{stock.includedWeekCount} minggu sampai {formatDate(stock.asOfDate)}. Total barang datang dikurangi seluruh pesanan aktif, termasuk sisa minggu sebelumnya.</p></div>
+    <div className="grid sm:grid-cols-2">{stock.groups.map((group) => {
+      const deficit = group.remainingQuantity !== null && Number(group.remainingQuantity) < 0
+      return <div key={group.groupCode} className="border-t border-slate-200 p-5 first:border-t-0 sm:border-l sm:border-t-0 sm:first:border-l-0"><h3 className="font-bold text-slate-900">{group.groupCode === 'AYAM' ? 'Ayam' : 'Tahu'}</h3><p className={`mt-2 text-2xl font-black tabular-nums ${deficit ? 'text-rose-800' : 'text-emerald-800'}`}>{group.remainingQuantity === null ? 'Belum lengkap' : `${deficit ? 'Kurang ' : ''}${Math.abs(Number(group.remainingQuantity)).toLocaleString('id-ID')} ${group.unit}`}</p><dl className="mt-4 space-y-2 text-sm"><div className="flex flex-wrap justify-between gap-2"><dt className="text-slate-600">Total barang datang</dt><dd className="font-semibold tabular-nums text-slate-900">{Number(group.incomingQuantity).toLocaleString('id-ID')} {group.unit}</dd></div><div className="flex flex-wrap justify-between gap-2"><dt className="text-slate-600">Total dipesan</dt><dd className="font-semibold tabular-nums text-slate-900">{Number(group.orderedQuantity).toLocaleString('id-ID')} {group.unit}</dd></div></dl>{group.missingWeekCount > 0 ? <p className="mt-3 text-xs text-amber-900">Jumlah barang datang pada {group.missingWeekCount} minggu belum diisi.</p> : null}{group.unmappedItemCount > 0 ? <p className="mt-3 text-xs text-amber-900">Ada produk pesanan yang kelompoknya belum ditetapkan.</p> : null}{deficit ? <p className="mt-3 text-xs text-rose-800">Total pesanan melebihi jumlah barang datang yang tercatat.</p> : null}</div>
+    })}</div>
+  </section>
+}
+
 function DashboardContent() {
   const { operationalSchema } = useOperationalMode()
   const router = useRouter()
@@ -191,6 +207,8 @@ function DashboardContent() {
 
   if (!data?.hasCycle || !cycle || !action) {
     return (
+      <div className="mx-auto max-w-7xl space-y-6">
+      <CumulativeStockPanel stock={data?.cumulativeStock} />
       <section className="mx-auto mt-12 max-w-2xl border-y border-slate-200 py-12 text-center">
         <CalendarDays className="mx-auto h-8 w-8 text-emerald-800" />
         <h1 className="mt-4 text-2xl font-black tracking-tight text-slate-950">Minggu ini belum dimulai</h1>
@@ -199,6 +217,7 @@ function DashboardContent() {
         <div className="mt-6 flex justify-center"><StartWeekButton /></div>
         <div className="mt-5 flex flex-wrap justify-center gap-3">{data?.allCycles.slice(0, 4).map((item) => <Link key={item.id} className="min-h-11 text-sm font-semibold text-emerald-800 underline underline-offset-4" href={`/?cycleId=${item.id}`}>{item.label} · {cycleStatusLabel(cycleTiming(item, now).effectiveStatus)}</Link>)}</div>
       </section>
+      </div>
     )
   }
 
@@ -229,6 +248,8 @@ function DashboardContent() {
         <dl className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,180px),1fr))] gap-4 rounded-b-xl border-t border-slate-200 bg-slate-50 px-5 py-4">{[{ label: 'Awal minggu', date: cycle.periodStart }, { label: 'Barang tiba', date: cycle.deliveryDate }].map((stage) => <div key={stage.label}><dt className="text-xs font-semibold text-slate-500">{stage.label}</dt><dd className="mt-1 text-sm font-bold text-slate-900">{stage.date ? formatDate(stage.date, { weekday: 'long', day: 'numeric', month: 'short' }) : 'Belum ditetapkan'}</dd></div>)}</dl>
         {error ? <p className="px-5 py-3 text-sm font-medium text-rose-700" role="alert">Data lama masih ditampilkan. {error}</p> : null}
       </header>
+
+      <CumulativeStockPanel stock={data.cumulativeStock} />
 
       <section className="overflow-hidden rounded-xl border border-slate-200 bg-white" aria-labelledby="target-heading">
         <div className="border-b border-slate-200 p-5 sm:col-span-2 sm:flex sm:items-center sm:justify-between">
