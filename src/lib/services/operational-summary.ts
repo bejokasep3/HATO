@@ -17,7 +17,7 @@ export async function getCycleSummary(prisma: PrismaClient, cycleId: string, now
       rotationSchedules: { include: { member: { include: { group: true } } } },
       orders: {
         where: { cancelledAt: null },
-        include: { items: true, payments: true, member: { include: { group: true } } },
+        include: { items: { include: { product: { select: { targetGroup: true } } } }, payments: true, member: { include: { group: true } } },
         orderBy: { createdAt: 'desc' },
       },
     },
@@ -42,12 +42,12 @@ export async function getCycleSummary(prisma: PrismaClient, cycleId: string, now
 
   const groups = (['AYAM', 'TAHU'] as const).map((groupCode) => {
     const target = cycle.targets.find((item) => item.groupCode === groupCode)
-    if (!target || cycle.rulesVersion !== 2) {
-      return { groupCode, unit: groupCode === 'AYAM' ? 'kg' : 'bungkus', target: target?.quantity.toFixed(2) ?? null, demand: null, progress: null, status: 'unknown' as const }
+    if (!target) {
+      return { groupCode, unit: groupCode === 'AYAM' ? 'kg' : 'bungkus', target: null, demand: null, progress: null, status: 'unknown' as const }
     }
     const ids = new Set(cycle.weeklyPrices.filter((price) => price.targetGroupSnapshot === groupCode).map((price) => price.productId))
     const demand = formatScaled(cycle.orders.flatMap((order) => order.items)
-      .filter((item) => ids.has(item.productId))
+      .filter((item) => cycle.rulesVersion === 2 ? ids.has(item.productId) : item.product.targetGroup === groupCode)
       .reduce((sum, item) => sum + parseScaled(item.quantity.toFixed(2), 2, 8), 0n))
     const targetAmount = target.quantity.toFixed(2)
     return {

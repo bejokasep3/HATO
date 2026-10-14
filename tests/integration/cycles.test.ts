@@ -98,7 +98,7 @@ test('legacy target corrections preserve historical prices, orders and unknown b
   assert.deepEqual(after.orders, cycle.orders)
   const summary = await getCycleSummary(prisma, cycle.id)
   assert.equal(summary.targets.find((target) => target.groupCode === 'AYAM')?.target, '12.50')
-  assert.equal(summary.targets.find((target) => target.groupCode === 'AYAM')?.demand, null)
+  assert.notEqual(summary.targets.find((target) => target.groupCode === 'AYAM')?.demand, null)
   await assert.rejects(() => changeTargets(prisma, { ...input, key: randomUUID() }), (error: unknown) => error instanceof ServiceError && error.code === 'STALE_VERSION')
   await assert.rejects(() => openCycle(prisma, { actorId, key: randomUUID(), id: cycle.id, expectedVersion: after.version }), (error: unknown) => error instanceof ServiceError && error.code === 'LEGACY_CYCLE_READ_ONLY')
 })

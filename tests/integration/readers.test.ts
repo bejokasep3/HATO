@@ -83,7 +83,7 @@ test('operational readers use target snapshots and the payment ledger without wr
 
 test.after(async () => prisma.$disconnect())
 
-test('historical targets remain visible and inventory reads preserve unknown stock', async () => {
+test('historical order demand restores target progress while inventory stock stays unknown', async () => {
   await assertIsolatedTestDatabase(prisma, 'hato_recap')
   const product = await prisma.product.findFirstOrThrow({ where: { targetGroup: 'AYAM', isActive: true } })
   const receiptProduct = await prisma.product.findFirstOrThrow({ where: { targetGroup: 'TAHU', isActive: true } })
@@ -100,7 +100,13 @@ test('historical targets remain visible and inventory reads preserve unknown sto
   const dashboard = await getDashboardSummary(prisma, cycle.id)
   assert.equal(dashboard.targets.find((item) => item.groupCode === 'AYAM')?.target, '20.00')
   assert.equal(dashboard.targets.find((item) => item.groupCode === 'TAHU')?.target, '20.00')
-  assert.equal(dashboard.targets.every((item) => item.demand === null && item.progress === null), true)
+  const chicken = dashboard.targets.find((item) => item.groupCode === 'AYAM')!
+  const tofu = dashboard.targets.find((item) => item.groupCode === 'TAHU')!
+  assert.equal(chicken.demand, '10.00')
+  assert.equal(chicken.progress?.percentage, 50)
+  assert.equal(chicken.progress?.shortfall, '10.00')
+  assert.equal(tofu.demand, '0.00')
+  assert.equal(tofu.progress?.shortfall, '20.00')
   const inventory = await getCycleAvailability(prisma, cycle.id)
   assert.equal(inventory.historical, true)
   assert.equal(inventory.items.find((item) => item.productId === product.id)?.allocated, '10.00')
