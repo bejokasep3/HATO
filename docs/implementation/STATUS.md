@@ -1,5 +1,7 @@
 # Status implementasi
 
+14 October simplified web flow: group targets also represent goods received; Pesanan allows historical edits/deletion and direct full settlement; Piutang lists outstanding orders. Paid corrections keep the corrected total paid, with audit history. See evidence/2026-10-14-simple-order-flow.md for rules and validation.
+
 14 October follow-up: web payments now includes explicit historical opening-balance confirmation with an amount and verification note. Actual historical amounts remain for managers to confirm. See evidence/2026-10-14-opening-balance.md for validation and limits.
 
 14 October follow-up: production browser saves had a localhost-only origin setting; production configuration and exact alias handling are corrected. Imported September targets can be recorded independently of financial reconciliation, without changing their original orders/prices. See `evidence/2026-10-14-production-save-fix.md` for browser-cookie verification requirements and current test evidence.

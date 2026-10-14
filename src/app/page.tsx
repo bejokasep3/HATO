@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import {
   AlertTriangle, ArrowRight, CalendarDays, CheckCircle2, CircleDollarSign,
-  ClipboardList, Clock3, PackageCheck, Plus, RefreshCw, ShoppingBasket, Users,
+  ClipboardList, Clock3, Plus, RefreshCw, Users,
 } from 'lucide-react'
 import { StartWeekButton } from '@/components/StartWeekButton'
 import { apiGet } from '@/lib/api-client'
@@ -96,13 +96,7 @@ function nextAction(cycle: CycleSummary, now: Date) {
   if (cycle.periodState === 'draft') {
     return { title: 'Catat pesanan minggu ini', detail: 'Jumlah pesanan bisa dicatat sekarang. Isi dan kunci harga nanti untuk menghitung tagihan.', href: `/cycles/${cycle.id}`, label: 'Isi harga & kunci tagihan', icon: ClipboardList }
   }
-  if (!cycle.recapConfirmedAt) {
-    return { title: 'Pesanan dan rekap supplier', detail: 'Input pesanan yang masuk. Pada Selasa, periksa pembagian tiap varian lalu konfirmasi rekap.', href: `/cycles/${cycle.id}`, label: 'Periksa rekap', icon: ShoppingBasket }
-  }
-  if (cycle.receiptStatus !== 'confirmed') {
-    return { title: 'Catat barang datang', detail: 'Rekap sudah terkunci. Pada Kamis, catat jumlah diterima, rusak, dan harga beli.', href: '/inventory', label: 'Buka penerimaan', icon: PackageCheck }
-  }
-  return { title: 'Distribusi dan pembayaran', detail: 'Barang sudah diterima. Pantau pengiriman dan cicilan yang masih berjalan.', href: '/orders', label: 'Lihat pesanan', icon: CircleDollarSign }
+  return { title: 'Pesanan dan pembayaran', detail: 'Kelola pesanan, tandai lunas, dan pantau sisa barang dari target kelompok.', href: '/orders', label: 'Kelola pesanan', icon: CircleDollarSign }
 }
 
 function TargetPanel({ target, variants }: { target: TargetSummary; variants: NonNullable<DashboardData['variants']> }) {
@@ -138,7 +132,7 @@ function TargetPanel({ target, variants }: { target: TargetSummary; variants: No
             <div className={`h-full rounded-full ${reached ? 'bg-emerald-700' : 'bg-amber-500'}`} style={{ width: `${Math.min(100, percentage)}%` }} />
           </div>
           <div className="mt-2 flex items-center justify-between text-xs text-slate-500">
-            <span>Rencana beli minimal {Number(target.progress.plannedPurchase).toLocaleString('id-ID')} {target.unit}</span>
+            <span>Barang datang / target {Number(target.progress.plannedPurchase).toLocaleString('id-ID')} {target.unit}</span>
             <span className="font-bold tabular-nums text-slate-700">{percentage}%</span>
           </div>
         </div>
@@ -163,12 +157,6 @@ function DashboardContent() {
     try {
       const query = cycleId ? `?cycleId=${encodeURIComponent(cycleId)}` : ''
       const result = await apiGet<DashboardData>(`/api/dashboard${query}`)
-      if (result.currentCycle?.rulesVersion === 2) {
-        try {
-          const recap = await apiGet<{ items: NonNullable<DashboardData['variants']> }>(`/api/cycles/${result.currentCycle.id}/supplier-recap`)
-          result.variants = recap.items
-        } catch { result.variantsUnavailable = true }
-      }
       setData(result)
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Dashboard gagal dimuat.')
@@ -246,14 +234,14 @@ function DashboardContent() {
             <StartWeekButton /><Button disabled={operationalSchema !== true || !timing?.allowsManagerEntry} onClick={() => router.push(cycleHref('/orders?new=1'))} className="w-full @3xl:w-auto whitespace-nowrap" icon={<Plus className="h-4 w-4" />}>Input pesanan</Button>
           </div>
         </div>
-        <dl className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,180px),1fr))] gap-4 rounded-b-xl border-t border-slate-200 bg-slate-50 px-5 py-4">{[{ label: 'Awal minggu', date: cycle.periodStart }, { label: 'Rekap supplier', date: cycle.supplierDeadline }, { label: 'Barang tiba', date: cycle.deliveryDate }].map((stage) => <div key={stage.label}><dt className="text-xs font-semibold text-slate-500">{stage.label}</dt><dd className="mt-1 text-sm font-bold text-slate-900">{stage.date ? formatDate(stage.date, { weekday: 'long', day: 'numeric', month: 'short' }) : 'Belum ditetapkan'}</dd></div>)}</dl>
+        <dl className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,180px),1fr))] gap-4 rounded-b-xl border-t border-slate-200 bg-slate-50 px-5 py-4">{[{ label: 'Awal minggu', date: cycle.periodStart }, { label: 'Barang tiba', date: cycle.deliveryDate }].map((stage) => <div key={stage.label}><dt className="text-xs font-semibold text-slate-500">{stage.label}</dt><dd className="mt-1 text-sm font-bold text-slate-900">{stage.date ? formatDate(stage.date, { weekday: 'long', day: 'numeric', month: 'short' }) : 'Belum ditetapkan'}</dd></div>)}</dl>
         {error ? <p className="px-5 py-3 text-sm font-medium text-rose-700" role="alert">Data lama masih ditampilkan. {error}</p> : null}
       </header>
 
       <section className="overflow-hidden rounded-xl border border-slate-200 bg-white" aria-labelledby="target-heading">
         <div className="border-b border-slate-200 p-5 sm:col-span-2 sm:flex sm:items-center sm:justify-between">
-          <div><h2 id="target-heading" className="text-lg font-extrabold text-slate-950">Target dan permintaan</h2><p className="mt-1 text-sm text-slate-600">Target adalah pembelian minimum. Pesanan tetap boleh melewati target.</p></div>
-          <Link href={cycleHref(`/cycles/${cycle.id}`)} className="mt-3 inline-flex min-h-11 shrink-0 items-center gap-1 text-sm font-bold text-emerald-800 hover:text-emerald-950 sm:mt-0">Atur target dan rekap <ArrowRight className="h-4 w-4" /></Link>
+          <div><h2 id="target-heading" className="text-lg font-extrabold text-slate-950">Target dan permintaan</h2><p className="mt-1 text-sm text-slate-600">Target adalah jumlah barang datang. Indikator membandingkannya dengan pesanan anggota.</p></div>
+          <Link href={cycleHref(`/cycles/${cycle.id}`)} className="mt-3 inline-flex min-h-11 shrink-0 items-center gap-1 text-sm font-bold text-emerald-800 hover:text-emerald-950 sm:mt-0">Atur target / barang datang <ArrowRight className="h-4 w-4" /></Link>
         </div>
         <div className="grid @2xl:grid-cols-2">{data.targets.map((target) => <TargetPanel key={target.groupCode} target={target} variants={(data.variants ?? []).filter((variant) => variant.groupCode === target.groupCode)} />)}</div>
         {data.variantsUnavailable ? <p className="border-t border-slate-200 px-5 py-3 text-xs text-amber-900">Rincian varian belum dapat dimuat. Target gabungan tetap ditampilkan.</p> : null}
@@ -273,13 +261,13 @@ function DashboardContent() {
         </section>
 
       <section className="@container/orders rounded-xl border border-slate-200 bg-white p-5" aria-labelledby="recent-heading">
-        <div className="flex items-center justify-between gap-3"><div><h2 id="recent-heading" className="font-extrabold text-slate-950">Pesanan terbaru</h2><p className="mt-1 text-sm text-slate-600">Lima input terakhir. Pilih pesanan untuk melihat pembayaran.</p></div><Link href={cycleHref('/orders')} className="inline-flex min-h-11 items-center text-sm font-bold text-emerald-800">Semua</Link></div>
+        <div className="flex items-center justify-between gap-3"><div><h2 id="recent-heading" className="font-extrabold text-slate-950">Pesanan terbaru</h2><p className="mt-1 text-sm text-slate-600">Lima input terakhir. Kelola pembayaran dari tab Pesanan.</p></div><Link href={cycleHref('/orders')} className="inline-flex min-h-11 items-center text-sm font-bold text-emerald-800">Semua</Link></div>
         <div className="mt-4 divide-y divide-slate-100 border-y border-slate-200">
           {data.recentOrders.map((order) => (
-            <Link key={order.id} href={cycleHref(`/payments?orderId=${encodeURIComponent(order.id)}`)} className="grid min-h-11 gap-2 py-3 text-sm hover:bg-slate-50 @lg/orders:grid-cols-[minmax(0,1fr)_auto_auto] @lg/orders:items-center @lg/orders:px-2">
+            <Link key={order.id} href={cycleHref('/orders')} className="grid min-h-11 gap-2 py-3 text-sm hover:bg-slate-50 @lg/orders:grid-cols-[minmax(0,1fr)_auto_auto] @lg/orders:items-center @lg/orders:px-2">
               <div className="min-w-0"><p className="truncate font-bold text-slate-900">{order.memberName}</p><p className="truncate text-xs text-slate-500">{order.groupName} · {order.itemCount} produk</p></div>
               <span className="font-extrabold tabular-nums text-slate-950">{formatCurrency(order.totalAmount)}</span>
-              <Badge variant={order.paymentSummary.status === 'paid' ? 'emerald' : order.paymentSummary.status === 'unverified' ? 'slate' : 'amber'} size="sm">{order.paymentSummary.status === 'partial' ? 'Cicilan' : order.paymentSummary.status === 'paid' ? 'Lunas' : order.paymentSummary.status === 'unverified' ? 'Belum diverifikasi' : 'Belum bayar'}</Badge>
+              <Badge variant={order.paymentSummary.status === 'paid' ? 'emerald' : order.paymentSummary.status === 'unverified' ? 'slate' : 'amber'} size="sm">{order.paymentSummary.status === 'partial' ? 'Belum lunas' : order.paymentSummary.status === 'paid' ? 'Lunas' : order.paymentSummary.status === 'unverified' ? 'Belum diverifikasi' : 'Belum bayar'}</Badge>
             </Link>
           ))}
           {data.recentOrders.length === 0 ? <p className="py-8 text-center text-sm text-slate-500">Belum ada pesanan pada minggu ini.</p> : null}
@@ -297,7 +285,6 @@ function DashboardContent() {
                 <div className="rounded-lg bg-emerald-50 p-3"><dt className="text-xs font-semibold text-emerald-900">Pembayaran diterima</dt><dd className="mt-1 font-extrabold tabular-nums text-emerald-950 [overflow-wrap:anywhere]">{formatCurrency(finances.receivedPayments)}</dd></div>
                 <div className="rounded-lg bg-rose-50 p-3"><dt className="text-xs font-semibold text-rose-900">Sisa diketahui</dt><dd className="mt-1 font-extrabold tabular-nums text-rose-950 [overflow-wrap:anywhere]">{formatCurrency(finances.knownOutstanding)}</dd></div>
               </div>
-              <div className="border-y border-slate-200 py-3"><dt className="text-xs font-semibold text-slate-600">Nilai pembelian terkonfirmasi</dt><dd className="mt-1 text-sm font-bold tabular-nums text-slate-900 [overflow-wrap:anywhere]">{finances.purchaseValue === null ? 'Belum diketahui' : formatCurrency(finances.purchaseValue)}</dd></div>
             </dl>
           ) : <p className="mt-4 text-sm text-slate-600">Ringkasan keuangan belum tersedia.</p>}
           {finances?.totalIncomplete ? <div className="mt-3 flex gap-2 rounded-lg bg-amber-50 p-3 text-xs leading-5 text-amber-900"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" /><span>{finances.unknownBalanceCount} {cycle.periodState === 'draft' ? 'pesanan menunggu harga.' : 'saldo pesanan lama belum diverifikasi.'} Total piutang belum lengkap.</span></div> : null}
@@ -310,7 +297,7 @@ function DashboardContent() {
           <p className="mt-2 text-sm leading-6 text-slate-600">{action.detail}</p>
           <Link href={cycleHref(action.href)} className="mt-3 flex min-h-11 items-center justify-between gap-3 rounded-lg bg-emerald-50 px-3 py-2 text-sm font-bold text-emerald-900 hover:bg-emerald-100">{action.label}<ArrowRight className="h-4 w-4 shrink-0" /></Link>
           <nav aria-label="Tahapan kerja minggu ini" className="mt-3 divide-y divide-slate-200 border-t border-slate-200">
-            {[{ href: '/orders', label: 'Pesanan anggota' }, { href: `/cycles/${cycle.id}`, label: 'Rekap supplier' }, { href: '/inventory', label: 'Penerimaan barang' }].filter((step) => step.href !== action.href).map((step) => <Link key={step.href} href={cycleHref(step.href)} className="flex min-h-11 items-center justify-between gap-3 py-3 text-sm font-semibold text-slate-700 hover:text-emerald-900">{step.label}<ArrowRight className="h-4 w-4 shrink-0" /></Link>)}
+            {[{ href: '/orders', label: 'Pesanan anggota' }, { href: `/cycles/${cycle.id}`, label: 'Target / barang datang' }, { href: '/inventory', label: 'Sisa barang' }].filter((step) => step.href !== action.href).map((step) => <Link key={step.href} href={cycleHref(step.href)} className="flex min-h-11 items-center justify-between gap-3 py-3 text-sm font-semibold text-slate-700 hover:text-emerald-900">{step.label}<ArrowRight className="h-4 w-4 shrink-0" /></Link>)}
           </nav>
         </section>
         </div>

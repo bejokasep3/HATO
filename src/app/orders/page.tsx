@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { AlertTriangle, CheckCircle2, Plus, RefreshCw, Search, ShoppingBasket } from 'lucide-react'
 import { toast } from 'sonner'
-import { apiGet, apiPost, newIdempotencyKey } from '@/lib/api-client'
+import { apiGet, apiPatch, apiPost, newIdempotencyKey } from '@/lib/api-client'
 import { formatCurrency } from '@/lib/utils'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
@@ -20,10 +20,9 @@ type CycleItem = { id: string; label: string; periodStart: string; periodEnd?: s
 type Member = { id: string; name: string; phone: string; group?: { name: string }; groupName?: string }
 type Product = { id: string; name: string; unit: string; isActive: boolean }
 type Price = { productId: string; consumerPrice: number; traderPrice: number; product: Product }
-type Availability = { items: Array<{ productId: string; availableToOrder: string | null; shortage: string | null; source: 'planned' | 'received' | 'unknown' }> }
 type Order = {
   id: string; cycleId: string; memberId: string; totalAmount: string; orderStatus: string; version: number
-  cancelledAt: string | null; createdAt: string
+  cancelledAt: string | null; createdAt: string; notes?: string | null
   pricingPending?: boolean
   member: Member & { group?: { name: string } }
   items: Array<{ id: string; productId: string; quantity: string; unitPrice: string; subtotal: string; priceType?: 'consumer' | 'trader'; product: Product }>
@@ -56,7 +55,7 @@ function previewSubtotal(price: number, quantity: string) {
 
 function paymentLabel(status: Order['paymentSummary']['status']) {
   if (status === 'paid') return 'Lunas'
-  if (status === 'partial') return 'Cicilan'
+  if (status === 'partial') return 'Belum lunas'
   if (status === 'unverified') return 'Belum diverifikasi'
   return 'Belum bayar'
 }
@@ -78,6 +77,11 @@ function OrderItems({ order }: { order: Order }) {
   </li>)}</ul>
 }
 
+function OrderActions({ order, disabled, onEdit, onDelete, onPay }: { order: Order; disabled: boolean; onEdit: () => void; onDelete: () => void; onPay: () => void }) {
+  if (order.cancelledAt) return <Button size="sm" variant="secondary" disabled={disabled} onClick={onPay}>Pulihkan</Button>
+  return <div className="flex flex-wrap gap-2 py-2"><Button size="sm" variant="secondary" disabled={disabled} onClick={onEdit}>Edit</Button><Button size="sm" variant="danger" disabled={disabled} onClick={onDelete}>Hapus</Button>{order.paymentSummary.status === 'paid' ? <Badge variant="emerald">Lunas</Badge> : <Button size="sm" disabled={disabled || order.pricingPending} onClick={onPay}>Tandai lunas</Button>}</div>
+}
+
 function OrdersContent() {
   const { operationalSchema } = useOperationalMode()
   const canMutate = operationalSchema === true
@@ -91,13 +95,18 @@ function OrdersContent() {
   const [members, setMembers] = useState<Member[]>([])
   const [products, setProducts] = useState<Product[]>([])
   const [prices, setPrices] = useState<Price[]>([])
-  const [availability, setAvailability] = useState<Availability | null>(null)
   const [loading, setLoading] = useState(true)
   const [formLoading, setFormLoading] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
   const [open, setOpen] = useState(false)
-  const [paymentFilter, setPaymentFilter] = useState<'all' | 'open' | 'paid' | 'unverified'>('all')
+  const [editing, setEditing] = useState<Order | null>(null)
+  const [editLines, setEditLines] = useState<Array<{ productId: string; priceType: 'consumer' | 'trader'; quantity: string }>>([])
+  const [editNotes, setEditNotes] = useState('')
+  const [deleting, setDeleting] = useState<Order | null>(null)
+  const [actionSaving, setActionSaving] = useState<string | null>(null)
+  const actionAttempt = useRef<{ signature: string; key: string } | null>(null)
+  const [paymentFilter, setPaymentFilter] = useState<'all' | 'open' | 'paid' | 'unverified' | 'deleted'>('all')
   const [orderSearch, setOrderSearch] = useState('')
   const [memberId, setMemberId] = useState('')
   const [memberSearch, setMemberSearch] = useState('')
@@ -130,15 +139,13 @@ function OrdersContent() {
     setError('')
     setOrders([])
     try {
-      const [orderRows, priceRows, availabilityResult] = await Promise.all([
+      const [orderRows, priceRows] = await Promise.all([
         apiGet<Order[]>(`/api/orders?cycleId=${encodeURIComponent(selectedCycleId)}`),
         apiGet<Price[]>(`/api/cycles/${selectedCycleId}/prices`),
-        apiGet<Availability>(`/api/cycles/${selectedCycleId}/availability`).catch(() => null),
       ])
       if (sequence !== cycleLoadSequence.current) return
       setOrders(orderRows)
       setPrices(priceRows)
-      setAvailability(availabilityResult)
     } catch (cause) { if (sequence === cycleLoadSequence.current) setError(cause instanceof Error ? cause.message : 'Pesanan minggu ini gagal dimuat.') }
     finally { if (sequence === cycleLoadSequence.current) setFormLoading(false) }
   }, [])
@@ -193,7 +200,6 @@ function OrdersContent() {
     return members.filter((member) => !needle || member.name.toLocaleLowerCase('id-ID').includes(needle) || (member.group?.name ?? member.groupName ?? '').toLocaleLowerCase('id-ID').includes(needle)).slice(0, 20)
   }, [memberSearch, members])
   const priceByProduct = useMemo(() => new Map(prices.map((price) => [price.productId, price])), [prices])
-  const availabilityByProduct = useMemo(() => new Map(availability?.items.map((item) => [item.productId, item]) ?? []), [availability])
   const activeProducts = products.filter((product) => priceByProduct.has(product.id))
   const total = activeProducts.reduce((sum, product) => {
     const price = priceByProduct.get(product.id)
@@ -212,7 +218,7 @@ function OrdersContent() {
   }, [orders])
 
   const filteredOrders = orders.filter((order) => {
-    if (paymentFilter !== 'all' && order.cancelledAt) return false
+    if (paymentFilter === 'deleted' ? !order.cancelledAt : Boolean(order.cancelledAt)) return false
     const needle = orderSearch.trim().toLocaleLowerCase('id-ID')
     const searchable = [order.member.name, order.member.phone, order.member.group?.name ?? order.member.groupName ?? '', ...order.items.map((item) => item.product.name)].join(' ').toLocaleLowerCase('id-ID')
     if (needle && !searchable.includes(needle)) return false
@@ -232,6 +238,36 @@ function OrdersContent() {
     if (!keepOpen) setOpen(false)
   }
 
+  async function orderAction(order: Order, action: 'settle' | 'cancel' | 'edit' | 'restore') {
+    if (!canMutate || actionSaving) return
+    if (action === 'edit' && editLines.some((line) => parseHundredths(line.quantity.trim()) === null)) {
+      toast.error('Periksa jumlah setiap produk. Gunakan 0 atau Hapus produk untuk mengeluarkannya.')
+      return
+    }
+    const payload = action === 'edit' ? { id: order.id, expectedVersion: order.version, items: editLines.filter((line) => Number(line.quantity) > 0), notes: editNotes } : action === 'cancel' || action === 'restore' ? { expectedVersion: order.version, reason: action === 'cancel' ? 'Pesanan dihapus oleh manajer' : 'Pesanan dipulihkan oleh manajer' } : { expectedVersion: order.version }
+    const signature = JSON.stringify({ id: order.id, action, payload })
+    const attempt = actionAttempt.current?.signature === signature ? actionAttempt.current : { signature, key: newIdempotencyKey() }
+    actionAttempt.current = attempt
+    setActionSaving(order.id)
+    try {
+      if (action === 'edit') await apiPatch('/api/orders', payload, { idempotencyKey: attempt.key })
+      else await apiPost(`/api/orders/${order.id}/${action}`, payload, { idempotencyKey: attempt.key })
+      toast.success(action === 'settle' ? 'Pesanan ditandai lunas.' : action === 'edit' ? 'Pesanan diperbarui.' : action === 'restore' ? 'Pesanan dipulihkan sebagai belum lunas.' : 'Pesanan dihapus dari daftar aktif.')
+      setEditing(null)
+      setDeleting(null)
+      actionAttempt.current = null
+      await loadCycle(order.cycleId)
+    } catch (cause) { toast.error(cause instanceof Error ? cause.message : 'Perubahan gagal disimpan.') }
+    finally { setActionSaving(null) }
+  }
+
+  function beginEdit(order: Order) {
+    setEditing(order)
+    setEditLines(order.items.map((item) => ({ productId: item.productId, priceType: item.priceType ?? 'consumer', quantity: item.quantity })))
+    setEditNotes(order.notes ?? '')
+    actionAttempt.current = null
+  }
+
   async function submit(continueEntry: boolean) {
     if (!canMutate || !cycleId || !memberId || !acceptsOrders || formLoading) return
     let items: Array<{ productId: string; quantity: string; priceType: 'consumer' | 'trader' }>
@@ -241,8 +277,6 @@ function OrdersContent() {
         if (!value) return []
         const parsed = parseHundredths(value)
         if (parsed === null || parsed <= 0n || (product.unit === 'bungkus' && parsed % 100n !== 0n)) throw new Error(`Jumlah ${product.name} tidak valid.`)
-        const stock = availabilityByProduct.get(product.id)
-        if (stock?.availableToOrder !== null && stock?.availableToOrder !== undefined && Number(value) > Number(stock.availableToOrder)) throw new Error(`${product.name} hanya tersedia ${Number(stock.availableToOrder).toLocaleString('id-ID')} ${product.unit}.`)
         return [{ productId: product.id, quantity: value, priceType }]
       })
     } catch (cause) {
@@ -307,7 +341,7 @@ function OrdersContent() {
 
       <section aria-label="Cari dan filter pesanan" className="grid gap-3 rounded-xl border border-slate-200 bg-white p-4 @4xl:grid-cols-[minmax(0,1fr)_auto]">
         <div className="relative"><label htmlFor="order-search" className="sr-only">Cari pesanan</label><Search className="pointer-events-none absolute left-3 top-3.5 h-4 w-4 text-slate-500" /><input id="order-search" type="search" value={orderSearch} onChange={(event) => setOrderSearch(event.target.value)} placeholder="Cari nama, kelompok, telepon, atau barang" className="min-h-11 w-full rounded-lg border border-slate-500 pl-9 pr-3 text-sm placeholder:text-slate-500" /></div>
-        <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Filter pembayaran">{([['all', 'Semua'], ['open', 'Belum lunas'], ['paid', 'Lunas'], ['unverified', 'Belum diverifikasi']] as const).map(([value, label]) => <button key={value} type="button" onClick={() => setPaymentFilter(value)} aria-pressed={paymentFilter === value} className={`min-h-11 rounded-lg px-3 text-xs font-bold ${paymentFilter === value ? 'bg-emerald-800 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`}>{label}</button>)}</div>
+        <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Filter pembayaran">{([['all', 'Semua'], ['open', 'Belum lunas'], ['paid', 'Lunas'], ['unverified', 'Belum diverifikasi'], ['deleted', 'Dihapus']] as const).map(([value, label]) => <button key={value} type="button" onClick={() => setPaymentFilter(value)} aria-pressed={paymentFilter === value} className={`min-h-11 rounded-lg px-3 text-xs font-bold ${paymentFilter === value ? 'bg-emerald-800 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`}>{label}</button>)}</div>
         <p role="status" className="text-xs text-slate-600 @4xl:col-span-2">{loading || formLoading ? 'Memuat pesanan…' : `${filteredOrders.length} dari ${orders.length} pesanan ditampilkan`}</p>
       </section>
 
@@ -318,7 +352,7 @@ function OrdersContent() {
               <div className="flex flex-wrap items-start justify-between gap-3"><div className="min-w-0"><h2 className="break-words font-extrabold text-slate-950">{order.member.name}</h2><p className="mt-1 break-words text-xs text-slate-600">{order.member.group?.name ?? order.member.groupName ?? 'Tanpa kelompok'}</p></div><OrderPaymentBadge order={order} /></div>
               <div className="mt-4 border-y border-slate-200 py-3 text-sm"><OrderItems order={order} /></div>
               <dl className="mt-4 grid grid-cols-[repeat(auto-fit,minmax(min(100%,120px),1fr))] gap-3"><div><dt className="text-xs text-slate-600">Nilai pesanan</dt><dd className="mt-1 font-extrabold tabular-nums [overflow-wrap:anywhere]">{order.pricingPending ? 'Menunggu harga' : formatCurrency(order.totalAmount)}</dd></div><div><dt className="text-xs text-slate-600">Sisa</dt><dd className="mt-1 font-bold tabular-nums [overflow-wrap:anywhere]">{order.paymentSummary.outstandingAmount === null ? 'Belum diketahui' : formatCurrency(order.paymentSummary.outstandingAmount)}</dd></div><div><dt className="text-xs text-slate-600">Pengiriman</dt><dd className="mt-1 text-sm font-semibold">{deliveryLabel(order)}</dd></div></dl>
-              <Link href={`/payments?cycleId=${encodeURIComponent(cycleId)}&orderId=${encodeURIComponent(order.id)}`} className="mt-3 inline-flex min-h-11 items-center text-sm font-bold text-emerald-800 hover:text-emerald-950">Lihat pembayaran<span className="sr-only"> {order.member.name}</span></Link>
+              <OrderActions order={order} disabled={!canMutate || Boolean(actionSaving)} onEdit={() => beginEdit(order)} onDelete={() => { setDeleting(order); actionAttempt.current = null }} onPay={() => void orderAction(order, order.cancelledAt ? 'restore' : 'settle')} />
             </article>)}
           </div>
           {filteredOrders.length > 0 ? <div className="hidden overflow-x-auto rounded-xl border border-slate-200 bg-white @3xl:block">
@@ -332,7 +366,7 @@ function OrdersContent() {
                 <td className="px-4 py-4"><OrderPaymentBadge order={order} /></td>
                 <td className="px-4 py-4 font-semibold tabular-nums whitespace-nowrap">{order.paymentSummary.outstandingAmount === null ? 'Belum diketahui' : formatCurrency(order.paymentSummary.outstandingAmount)}</td>
                 <td className="px-4 py-4 text-slate-700">{deliveryLabel(order)}</td>
-                <td className="px-4 py-2"><Link href={`/payments?cycleId=${encodeURIComponent(cycleId)}&orderId=${encodeURIComponent(order.id)}`} className="inline-flex min-h-11 items-center text-sm font-bold text-emerald-800 hover:text-emerald-950">Lihat pembayaran<span className="sr-only"> {order.member.name}</span></Link></td>
+                <td className="px-4 py-2"><OrderActions order={order} disabled={!canMutate || Boolean(actionSaving)} onEdit={() => beginEdit(order)} onDelete={() => { setDeleting(order); actionAttempt.current = null }} onPay={() => void orderAction(order, 'settle')} /></td>
               </tr>)}</tbody>
             </table>
           </div> : null}
@@ -340,11 +374,27 @@ function OrdersContent() {
         </div>
       )}
 
+      <Modal isOpen={Boolean(editing)} onClose={() => !actionSaving && setEditing(null)} title="Edit pesanan" description={editing?.member.name} maxWidth="2xl">
+        <div className="space-y-4"><p className="text-sm text-slate-600">Pesanan tetap dapat dikoreksi setelah minggu berakhir. Pesanan lunas tetap lunas dengan nilai yang sudah dikoreksi.</p>
+          {editLines.map((line, index) => <div key={index} className="grid gap-2 rounded-lg border border-slate-200 p-3 sm:grid-cols-[1fr_auto_auto]">
+            <label className="text-xs font-bold">Produk<select value={line.productId} onChange={(event) => setEditLines((current) => current.map((item, at) => at === index ? { ...item, productId: event.target.value } : item))} className="mt-1 min-h-11 w-full rounded-lg border border-slate-300 px-2">{[...new Map([...activeProducts, ...(editing?.items.map((item) => item.product) ?? [])].map((product) => [product.id, product])).values()].map((product) => <option key={product.id} value={product.id}>{product.name}</option>)}</select></label>
+            <label className="text-xs font-bold">Jenis harga<select value={line.priceType} onChange={(event) => setEditLines((current) => current.map((item, at) => at === index ? { ...item, priceType: event.target.value as 'consumer' | 'trader' } : item))} className="mt-1 min-h-11 w-full rounded-lg border border-slate-300 px-2"><option value="consumer">Konsumen</option><option value="trader">Pedagang</option></select></label>
+            <label className="text-xs font-bold">Jumlah<input aria-label={'Jumlah produk ' + (index + 1)} inputMode="decimal" value={line.quantity} onChange={(event) => setEditLines((current) => current.map((item, at) => at === index ? { ...item, quantity: event.target.value.replace(',', '.') } : item))} className="mt-1 min-h-11 w-full rounded-lg border border-slate-300 px-2 sm:w-24" /></label>
+            <Button variant="ghost" size="sm" onClick={() => setEditLines((current) => current.filter((_, at) => at !== index))}>Hapus produk</Button>
+          </div>)}
+          <Button variant="secondary" disabled={!activeProducts.length} onClick={() => setEditLines((current) => [...current, { productId: activeProducts[0].id, priceType: 'consumer', quantity: '1' }])}>Tambah produk</Button>
+          <label className="block text-sm font-bold">Catatan<textarea value={editNotes} onChange={(event) => setEditNotes(event.target.value)} maxLength={2000} className="mt-1 w-full rounded-lg border border-slate-300 p-3" /></label>
+          <div className="flex justify-end gap-2"><Button variant="secondary" disabled={Boolean(actionSaving)} onClick={() => setEditing(null)}>Batal</Button><Button disabled={Boolean(actionSaving) || !editLines.length} onClick={() => editing && void orderAction(editing, 'edit')}>Simpan perubahan</Button></div>
+        </div>
+      </Modal>
+      <Modal isOpen={Boolean(deleting)} onClose={() => !actionSaving && setDeleting(null)} title="Hapus pesanan?" description={deleting?.member.name}>
+        <p className="text-sm text-slate-600">Pesanan dihapus dari daftar aktif, total pesanan, dan piutang. Jika sudah lunas, catatan pembayaran akan dikoreksi dalam riwayat. Ini tidak mencatat pengembalian uang secara fisik.</p><div className="mt-5 flex justify-end gap-2"><Button variant="secondary" disabled={Boolean(actionSaving)} onClick={() => setDeleting(null)}>Batal</Button><Button variant="danger" disabled={Boolean(actionSaving)} onClick={() => deleting && void orderAction(deleting, 'cancel')}>Hapus pesanan</Button></div>
+      </Modal>
       <Modal isOpen={open} onClose={() => !submitting && setOpen(false)} title="Input pesanan" description={`${selectedCycle?.label ?? 'Pilih siklus'} · draf tersimpan pada perangkat ini`} icon={<ShoppingBasket className="h-4 w-4" />} maxWidth="2xl">
         <div className="space-y-5">
           <section><label htmlFor="member-search" className="text-sm font-bold text-slate-800">Cari anggota</label><div className="relative mt-1.5"><Search className="pointer-events-none absolute left-3 top-3.5 h-4 w-4 text-slate-400" /><input id="member-search" autoComplete="off" value={memberSearch} onChange={(event) => setMemberSearch(event.target.value)} placeholder="Nama atau kelompok" className="min-h-11 w-full rounded-lg border border-slate-300 pl-9 pr-3 text-sm" /></div><div className="mt-2 max-h-36 divide-y divide-slate-100 overflow-y-auto border-y border-slate-200">{filteredMembers.map((member) => { const existing = existingMemberIds.has(member.id); return <button key={member.id} type="button" disabled={existing} onClick={() => { setMemberId(member.id); setMemberSearch(member.name) }} className={`flex min-h-11 w-full items-center justify-between gap-3 px-2 text-left text-sm ${memberId === member.id ? 'bg-emerald-50 text-emerald-950' : 'hover:bg-slate-50'} disabled:cursor-not-allowed disabled:opacity-50`}><span><strong>{member.name}</strong><span className="ml-2 text-xs text-slate-500">{member.group?.name ?? member.groupName}</span></span>{existing ? <span className="text-xs font-semibold">Sudah pesan</span> : memberId === member.id ? <CheckCircle2 className="h-4 w-4 text-emerald-700" /> : null}</button>})}</div></section>
 
-          <section><div className="flex flex-wrap items-center justify-between gap-3"><div><h3 className="text-sm font-bold text-slate-800">Produk dan jumlah</h3><p className="mt-1 text-xs text-slate-500">Kosongkan produk yang tidak dipesan.</p></div><div className="inline-flex rounded-lg bg-slate-100 p-1"><button type="button" onClick={() => setPriceType('consumer')} aria-pressed={priceType === 'consumer'} className={`min-h-11 rounded-md px-3 text-xs font-bold sm:min-h-8 ${priceType === 'consumer' ? 'bg-white text-slate-950 shadow-sm' : 'text-slate-600'}`}>Konsumen</button><button type="button" onClick={() => setPriceType('trader')} aria-pressed={priceType === 'trader'} className={`min-h-11 rounded-md px-3 text-xs font-bold sm:min-h-8 ${priceType === 'trader' ? 'bg-white text-slate-950 shadow-sm' : 'text-slate-600'}`}>Pedagang</button></div></div><div className="mt-3 divide-y divide-slate-100 border-y border-slate-200">{activeProducts.map((product) => { const price = priceByProduct.get(product.id)!; const stock = availabilityByProduct.get(product.id); const activePrice = priceType === 'consumer' ? price.consumerPrice : price.traderPrice; return <div key={product.id} className="grid gap-2 py-3 sm:grid-cols-[1fr_auto] sm:items-center"><div><p className="text-sm font-bold text-slate-900">{product.name}</p><p className="text-xs text-slate-500">{pricingPending ? 'Harga menyusul' : formatCurrency(activePrice)} / {product.unit}{stock?.availableToOrder !== null && stock?.availableToOrder !== undefined ? ` · tersedia ${Number(stock.availableToOrder).toLocaleString('id-ID')}` : ' · jatah belum dikunci'}</p></div><label className="flex items-center justify-end gap-2 text-xs font-semibold text-slate-600"><span className="sr-only">Jumlah {product.name}</span><input inputMode={product.unit === 'bungkus' ? 'numeric' : 'decimal'} value={quantities[product.id] ?? ''} onChange={(event) => setQuantities((current) => ({ ...current, [product.id]: event.target.value.replace(',', '.') }))} placeholder="0" className="min-h-11 w-24 rounded-lg border border-slate-300 px-3 text-right text-sm font-bold tabular-nums" /><span className="w-16">{product.unit}</span></label></div>})}{activeProducts.length === 0 ? <p className="py-5 text-sm text-amber-800">Produk minggu ini belum tersedia. Periksa pengaturan minggu.</p> : null}</div></section>
+          <section><div className="flex flex-wrap items-center justify-between gap-3"><div><h3 className="text-sm font-bold text-slate-800">Produk dan jumlah</h3><p className="mt-1 text-xs text-slate-500">Kosongkan produk yang tidak dipesan.</p></div><div className="inline-flex rounded-lg bg-slate-100 p-1"><button type="button" onClick={() => setPriceType('consumer')} aria-pressed={priceType === 'consumer'} className={`min-h-11 rounded-md px-3 text-xs font-bold sm:min-h-8 ${priceType === 'consumer' ? 'bg-white text-slate-950 shadow-sm' : 'text-slate-600'}`}>Konsumen</button><button type="button" onClick={() => setPriceType('trader')} aria-pressed={priceType === 'trader'} className={`min-h-11 rounded-md px-3 text-xs font-bold sm:min-h-8 ${priceType === 'trader' ? 'bg-white text-slate-950 shadow-sm' : 'text-slate-600'}`}>Pedagang</button></div></div><div className="mt-3 divide-y divide-slate-100 border-y border-slate-200">{activeProducts.map((product) => { const price = priceByProduct.get(product.id)!; const activePrice = priceType === 'consumer' ? price.consumerPrice : price.traderPrice; return <div key={product.id} className="grid gap-2 py-3 sm:grid-cols-[1fr_auto] sm:items-center"><div><p className="text-sm font-bold text-slate-900">{product.name}</p><p className="text-xs text-slate-500">{pricingPending ? 'Harga menyusul' : formatCurrency(activePrice)} / {product.unit}</p></div><label className="flex items-center justify-end gap-2 text-xs font-semibold text-slate-600"><span className="sr-only">Jumlah {product.name}</span><input inputMode={product.unit === 'bungkus' ? 'numeric' : 'decimal'} value={quantities[product.id] ?? ''} onChange={(event) => setQuantities((current) => ({ ...current, [product.id]: event.target.value.replace(',', '.') }))} placeholder="0" className="min-h-11 w-24 rounded-lg border border-slate-300 px-3 text-right text-sm font-bold tabular-nums" /><span className="w-16">{product.unit}</span></label></div>})}{activeProducts.length === 0 ? <p className="py-5 text-sm text-amber-800">Produk minggu ini belum tersedia. Periksa pengaturan minggu.</p> : null}</div></section>
 
           <label className="block text-sm font-bold text-slate-800">Catatan <span className="font-normal text-slate-500">(opsional)</span><textarea value={notes} onChange={(event) => setNotes(event.target.value)} rows={2} className="mt-1.5 w-full rounded-lg border border-slate-300 p-3 text-sm" /></label>
           <div className="flex flex-col gap-3 border-t border-slate-200 pt-4 sm:flex-row sm:items-center sm:justify-between"><div><p className="text-xs font-semibold text-slate-500">Total perkiraan</p><p className="text-xl font-black tabular-nums text-slate-950">{pricingPending ? 'Menunggu harga' : formatCurrency(total)}</p><p className="text-xs text-slate-500">Tagihan dihitung setelah harga diisi dan minggu dibuka.</p></div><div className="flex flex-col-reverse gap-2 sm:flex-row"><Button variant="secondary" disabled={!canMutate || submitting || !memberId || !activeProducts.length} onClick={() => void submit(true)}>{submitting ? 'Menyimpan…' : 'Simpan & berikutnya'}</Button><Button disabled={!canMutate || submitting || !memberId || !activeProducts.length} onClick={() => void submit(false)}>{submitting ? 'Menyimpan…' : 'Simpan'}</Button></div></div>

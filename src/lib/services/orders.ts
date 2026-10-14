@@ -1,7 +1,6 @@
 import { type PrismaClient } from '@prisma/client'
-import { canRecordOrder, cycleTiming, needsRecapForOrderEntry } from '../domain/calendar'
+import { canRecordOrder, cycleTiming } from '../domain/calendar'
 import { lineSubtotal, parseScaled, sumMoney } from '../domain/money'
-import { getCycleAvailability } from './availability'
 import { ServiceError, lockCycle, runIdempotent } from './mutation'
 
 type OrderLineInput = { productId: string; priceType: 'consumer' | 'trader'; quantity: string }
@@ -34,9 +33,6 @@ export async function createOrder(prisma: PrismaClient, input: {
       throw new ServiceError(409, 'ORDER_WINDOW_CLOSED', 'Siklus belum dimulai atau ditutup manual')
     }
     const pricingPending = cycle.periodState === 'draft'
-    if (!pricingPending && needsRecapForOrderEntry(periodStart, Boolean(cycle.supplierRecap), now)) {
-      throw new ServiceError(409, 'RECAP_REQUIRED', 'Rekap supplier harus dikonfirmasi sebelum menerima pesanan tambahan')
-    }
     const member = await tx.member.findUnique({ where: { id: input.memberId }, select: { isActive: true } })
     if (!member?.isActive) throw new ServiceError(422, 'MEMBER_NOT_ACTIVE', 'Anggota tidak aktif atau tidak ditemukan')
     const existing = await tx.order.findUnique({ where: { cycleId_memberId: { cycleId: input.cycleId, memberId: input.memberId } } })
@@ -56,21 +52,6 @@ export async function createOrder(prisma: PrismaClient, input: {
       const unitPrice = pricingPending ? '0.00' : selected.toFixed(2)
       return { ...item, unitPrice, subtotal: pricingPending ? '0.00' : lineSubtotal(unitPrice, item.quantity) }
     })
-
-    if (cycle.supplierRecap) {
-      const available = await getCycleAvailability(tx, input.cycleId)
-      const requestedByProduct = new Map<string, bigint>()
-      for (const item of items) requestedByProduct.set(item.productId, (requestedByProduct.get(item.productId) ?? 0n) + parseScaled(item.quantity, 2, 8))
-      for (const [productId, requested] of requestedByProduct) {
-        const row = available.items.find((item) => item.productId === productId)
-        const remaining = parseScaled(row?.availableToOrder ?? '0.00', 2, 8)
-        if (requested > remaining) {
-          throw new ServiceError(409, 'INSUFFICIENT_ALLOCATION', 'Jatah produk minggu ini tidak cukup', {
-            productId, available: row?.availableToOrder ?? '0.00', requested: `${requested / 100n}.${(requested % 100n).toString().padStart(2, '0')}`,
-          })
-        }
-      }
-    }
 
     const totalAmount = sumMoney(orderItems.map((item) => item.subtotal))
     const created = await tx.order.create({

@@ -30,7 +30,7 @@ interface AppShellProps {
 const navItems = [
   { href: '/', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/orders', label: 'Pesanan', icon: ShoppingCart },
-  { href: '/payments', label: 'Piutang & Pembayaran', icon: WalletCards },
+  { href: '/payments', label: 'Piutang', icon: WalletCards },
   { href: '/inventory', label: 'Barang', icon: PackageCheck },
   { href: '/cycles', label: 'Siklus Pesanan', icon: Repeat },
   { href: '/members', label: 'Komunitas', icon: Users },

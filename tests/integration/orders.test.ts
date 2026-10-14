@@ -15,7 +15,7 @@ const actorId = '20000000-0000-4000-8000-000000000099'
 const periodStart = addCalendarDays('2026-09-28', 7 * (110000 + Math.floor(Math.random() * 100000)))
 const atDay = (day: number) => new Date(`${addCalendarDays(periodStart, day)}T05:00:00.000Z`)
 
-test('order allocation is enforced per variant and concurrent requests cannot oversubscribe', async () => {
+test('orders do not require variant receipts or supplier allocation', async () => {
   await assertIsolatedTestDatabase(prisma, 'hato_recap')
   const products = await prisma.product.findMany({ where: { isActive: true } })
   const ayam = products.filter((product) => product.targetGroup === 'AYAM')
@@ -42,11 +42,6 @@ test('order allocation is enforced per variant and concurrent requests cannot ov
   assert.deepEqual(await createOrder(prisma, firstInput), first)
   const beforeRecap = await getCycleAvailability(prisma, cycleId)
   assert.equal(beforeRecap.items[0].source, 'unknown')
-  await assert.rejects(
-    () => createOrder(prisma, { actorId, key: randomUUID(), cycleId, memberId: members[1].id, now: atDay(2), items: [{ productId: ayam[0].id, priceType: 'consumer', quantity: '1.00' }] }),
-    (error: unknown) => error instanceof ServiceError && error.code === 'RECAP_REQUIRED',
-  )
-
   const cycle = await prisma.cycle.findUniqueOrThrow({ where: { id: cycleId } })
   await confirmSupplierRecap(prisma, { actorId, key: randomUUID(), id: cycleId, expectedVersion: cycle.version, items: [
     { productId: ayam[0].id, quantity: '7.00' }, { productId: ayam[1].id, quantity: '3.00' },
@@ -63,15 +58,12 @@ test('order allocation is enforced per variant and concurrent requests cannot ov
     actorId, key: randomUUID(), cycleId, memberId: member.id, now: atDay(3),
     items: [{ productId: ayam[0].id, priceType: 'consumer', quantity: '2.00' }],
   })))
-  assert.equal(results.filter((result) => result.status === 'fulfilled').length, 1)
-  assert.equal(results.filter((result) => result.status === 'rejected').length, 1)
+  assert.equal(results.filter((result) => result.status === 'fulfilled').length, 2, results.filter((result) => result.status === 'rejected').map((result) => String(result.reason)).join('\n'))
+  assert.equal(results.filter((result) => result.status === 'rejected').length, 0)
   const after = await getCycleAvailability(prisma, cycleId)
-  assert.equal(after.items.find((item) => item.productId === ayam[0].id)?.allocated, '6.00')
-  assert.equal(after.items.find((item) => item.productId === ayam[0].id)?.availableToOrder, '1.00')
-  await assert.rejects(
-    () => createOrder(prisma, { actorId, key: randomUUID(), cycleId, memberId: members[3].id, now: atDay(3), items: [{ productId: ayam[0].id, priceType: 'consumer', quantity: '2.00' }] }),
-    (error: unknown) => error instanceof ServiceError && error.code === 'INSUFFICIENT_ALLOCATION',
-  )
+  assert.equal(after.items.find((item) => item.productId === ayam[0].id)?.allocated, '8.00')
+  assert.equal(after.items.find((item) => item.productId === ayam[0].id)?.availableToOrder, '0.00')
+
   await assert.rejects(
     () => createOrder(prisma, { actorId, key: randomUUID(), cycleId, memberId: members[3].id, now: atDay(3), items: [{ productId: tahu[0].id, priceType: 'consumer', quantity: '1.50' }] }),
     (error: unknown) => error instanceof ServiceError && error.code === 'INVALID_QUANTITY',
@@ -93,11 +85,11 @@ test('recap confirmation and a new order serialize on the same cycle row', async
     createOrder(prisma, { actorId, key: randomUUID(), cycleId, memberId: member.id, now: new Date(`${nextWeek}T05:00:00.000Z`), items: [{ productId: ayam.id, priceType: 'consumer', quantity: '11.00' }] }),
     confirmSupplierRecap(prisma, { actorId, key: randomUUID(), id: cycleId, expectedVersion: 2, items: [{ productId: ayam.id, quantity: '10.00' }] }),
   ])
-  assert.equal(outcomes.filter((result) => result.status === 'fulfilled').length, 1)
-  assert.equal(outcomes.filter((result) => result.status === 'rejected').length, 1)
+  assert.equal(outcomes[0].status, 'fulfilled')
   const orderCount = await prisma.order.count({ where: { cycleId } })
   const recapCount = await prisma.supplierRecap.count({ where: { cycleId } })
-  assert.equal(orderCount + recapCount, 1)
+  assert.equal(orderCount, 1)
+  assert.equal(recapCount, outcomes[1].status === 'fulfilled' ? 1 : 0)
 })
 
 test.after(async () => prisma.$disconnect())

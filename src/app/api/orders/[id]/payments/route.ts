@@ -27,7 +27,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const orderId = z.uuid().parse((await params).id)
     const key = requireIdempotencyKey(request.headers.get('Idempotency-Key'))
     const body = createPaymentSchema.parse(await request.json())
-    const result = await addPayment(prisma, { actorId: auth.identity.actorId, key, orderId, ...body })
+    const result = await addPayment(prisma, { actorId: auth.identity.actorId, key, orderId, ...body, requireFull: true })
     return NextResponse.json(result.body, { status: result.status, headers: { 'Cache-Control': 'private, no-store' } })
   } catch (error) { return mutationErrorResponse(error) }
 }

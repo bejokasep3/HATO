@@ -53,7 +53,7 @@ export async function getOrderPayments(prisma: PrismaClient, orderId: string) {
 }
 
 export async function confirmOpeningBalance(prisma: PrismaClient, input: {
-  actorId: string; key: string; orderId: string; expectedVersion: number; paidAmount: string; reason: string
+  actorId: string; key: string; orderId: string; expectedVersion: number; paidAmount: string; reason: string; requireFull?: boolean
 }) {
   let paid: bigint
   try { paid = parseScaled(input.paidAmount, 2, 10) }
@@ -73,6 +73,7 @@ export async function confirmOpeningBalance(prisma: PrismaClient, input: {
     if (order.cancelledAt) throw new ServiceError(409, 'ORDER_CANCELLED', 'Pesanan dibatalkan')
     if (order.payments.length) throw new ServiceError(409, 'EXISTING_LEDGER_ENTRIES', 'Pesanan sudah memiliki catatan pembayaran; periksa catatan sebelum mengonfirmasi saldo')
     const total = order.totalAmount.toFixed(2)
+    if (input.requireFull && paid !== 0n && paid !== parseScaled(total, 2, 10)) throw new ServiceError(400, 'FULL_PAYMENT_REQUIRED', 'Pilih belum dibayar atau lunas penuh')
     if (paid > parseScaled(total, 2, 10)) throw new ServiceError(409, 'OPENING_EXCEEDS_TOTAL', 'Jumlah yang sudah dibayar melebihi nilai pesanan')
     const now = new Date()
     if (paid > 0n) await tx.payment.create({ data: {
@@ -95,7 +96,7 @@ export async function confirmOpeningBalance(prisma: PrismaClient, input: {
 
 export async function addPayment(prisma: PrismaClient, input: {
   actorId: string; key: string; orderId: string; amount: string
-  method: 'cash' | 'transfer' | 'other'; occurredAt?: string; note?: string | null
+  method: 'cash' | 'transfer' | 'other'; occurredAt?: string; note?: string | null; requireFull?: boolean
 }) {
   try { parseScaled(input.amount, 2, 10, false) }
   catch { throw new ServiceError(400, 'INVALID_PAYMENT_AMOUNT', 'Nominal pembayaran tidak valid') }
@@ -109,6 +110,7 @@ export async function addPayment(prisma: PrismaClient, input: {
     if (order.cancelledAt) throw new ServiceError(409, 'ORDER_CANCELLED', 'Pesanan dibatalkan')
     const before = summary(order)
     if (before.status === 'unverified') throw new ServiceError(409, 'LEDGER_RECONCILIATION_REQUIRED', 'Saldo belum diverifikasi')
+    if (input.requireFull && parseScaled(input.amount, 2, 10) !== parseScaled(before.outstandingAmount, 2, 10)) throw new ServiceError(400, 'FULL_PAYMENT_REQUIRED', 'Pembayaran harus melunasi seluruh pesanan')
     try { assertPaymentAllowed(before.outstandingAmount, input.amount) }
     catch { throw new ServiceError(409, 'PAYMENT_EXCEEDS_OUTSTANDING', 'Nominal melebihi sisa tagihan', { outstanding: before.outstandingAmount }) }
     const payment = await tx.payment.create({ data: {
@@ -131,6 +133,37 @@ export async function addPayment(prisma: PrismaClient, input: {
       orderVersion: updated.version, summary: after,
     } }
   })
+}
+
+export async function settleOrder(prisma: PrismaClient, input: {
+  actorId: string; key: string; orderId: string; expectedVersion: number
+}) {
+  return runIdempotent(prisma, { actorId: input.actorId, key: input.key, operation: 'payment.settle', payload: { orderId: input.orderId, expectedVersion: input.expectedVersion } }, async (tx) => {
+    const rows = await tx.$queryRaw<{ id: string }[]>`SELECT id FROM orders WHERE id = ${input.orderId}::uuid FOR UPDATE`
+    if (!rows.length) throw new ServiceError(404, 'ORDER_NOT_FOUND', 'Pesanan tidak ditemukan')
+    const order = await tx.order.findUniqueOrThrow({ where: { id: input.orderId }, include: { payments: true, cycle: true } })
+    if (order.version !== input.expectedVersion) throw new ServiceError(409, 'STALE_VERSION', 'Pesanan berubah; muat ulang sebelum menandai lunas')
+    if (order.cancelledAt) throw new ServiceError(409, 'ORDER_CANCELLED', 'Pesanan sudah dihapus')
+    if (order.cycle.rulesVersion === 2 && order.cycle.periodState === 'draft') throw new ServiceError(409, 'PRICES_NOT_READY', 'Isi dan kunci harga terlebih dahulu')
+    if (!order.ledgerReconciledAt && order.payments.length) throw new ServiceError(409, 'EXISTING_LEDGER_ENTRIES', 'Periksa catatan pembayaran lama terlebih dahulu')
+    const paid = sumEffectivePayments(order.payments)
+    const remaining = parseScaled(order.totalAmount.toFixed(2), 2, 10) - parseScaled(paid, 2, 10)
+    if (remaining < 0n) throw new ServiceError(409, 'BALANCE_INVALID', 'Pembayaran melebihi nilai pesanan; periksa catatan pembayaran')
+    const now = new Date()
+    const historical = !order.ledgerReconciledAt && order.cycle.rulesVersion !== 2
+    if (remaining > 0n) await tx.payment.create({ data: {
+      orderId: order.id, amount: formatScaled(remaining), method: 'other', actorId: input.actorId,
+      source: historical ? 'legacy_opening_balance' : 'manual', legacySourceOrderId: historical ? order.id : null,
+      occurredAt: historical ? null : now, note: historical ? 'Dikonfirmasi lunas dari daftar pesanan' : 'Pembayaran penuh dari daftar pesanan',
+    } })
+    const updated = await tx.order.update({ where: { id: order.id }, data: { paymentStatus: 'paid', ledgerReconciledAt: order.ledgerReconciledAt ?? now, ledgerReconciledBy: order.ledgerReconciledBy ?? input.actorId, paidAt: historical ? order.paidAt : order.paidAt ?? now, version: { increment: 1 } } })
+    await tx.auditEvent.create({ data: { actorId: input.actorId, entityType: 'order', entityId: order.id, action: 'settled', before: { paidAmount: paid }, after: { paidAmount: order.totalAmount.toFixed(2), paymentStatus: 'paid' } } })
+    return { status: 200, body: { orderId: order.id, orderVersion: updated.version, status: 'paid' } }
+  })
+}
+
+function sumEffectivePayments(payments: { amount: { toFixed: (digits: number) => string }; reversedAt: Date | null }[]) {
+  return formatScaled(payments.filter((entry) => !entry.reversedAt).reduce((total, entry) => total + parseScaled(entry.amount.toFixed(2), 2, 10), 0n))
 }
 
 export async function reversePayment(prisma: PrismaClient, input: {

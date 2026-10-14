@@ -58,7 +58,10 @@ export async function runIdempotent(
         return result
       }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable, maxWait: 5000, timeout: 15000 })
     } catch (error) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2034' && attempt < 2) continue
+      if (error instanceof Prisma.PrismaClientKnownRequestError && attempt < 2 && (
+        error.code === 'P2034' ||
+        (error.code === 'P2010' && ['40001', '40P01'].includes(String(error.meta?.code)))
+      )) continue
       throw error
     }
   }
