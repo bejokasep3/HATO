@@ -1,5 +1,9 @@
 # Status implementasi
 
+14 October follow-up: production browser saves had a localhost-only origin setting; production configuration and exact alias handling are corrected. Imported September targets can be recorded independently of financial reconciliation, without changing their original orders/prices. See `evidence/2026-10-14-production-save-fix.md` for browser-cookie verification requirements and current test evidence.
+
+Status terbaru 14 Oktober 2026: kode `f58104a` sudah di `main` dan produksi. Upgrade database produksi serta mapping katalog yang disetujui telah selesai; login admin dan API produksi terverifikasi, `operationalSchema: true`, dan seluruh data awal tetap sama. Pembuatan minggu/pesanan berhasil diuji lalu di-rollback. Refresh aplikasi untuk keluar dari mode baca-saja. Siklus September yang diimpor masih memerlukan verifikasi historis sebelum diedit. Bukti: `evidence/2026-10-14-production-upgrade.md`. Catatan tanggal sebelumnya di bawah adalah riwayat, bukan status produksi terkini.
+
 Verifikasi pra-push 13 Oktober 2026: clean candidate lulus frozen-lockfile install, full web build, TypeScript native, 38 tes domain/kontrak/integrasi, dan export iOS/Android/web. Rollback Ranking/Laporan terkonfirmasi; artefak redesign ditolak dikeluarkan dari candidate. Review branch masih reviewable, bukan siap rilis produksi: database terhubung masih schema lama dan kontrak tab Ranking/Laporan yang dipulihkan belum cocok dengan schema operasional. Bukti: `evidence/2026-10-13-prepush.md`. Belum commit/push/deploy.
 
 Pembaruan kalender 13 Oktober 2026: status waktu **Akan datang / Minggu ini / Berakhir** dihitung otomatis memakai WIB pada API dan web/mobile, dengan pembaruan layar setiap 15 detik. Dashboard default tidak lagi memilih minggu lama saat minggu baru belum dibuat. Periode berakhir tidak menghapus piutang atau menandai pengiriman selesai. Bukti: `evidence/2026-10-13-cycle-calendar.md`. Belum push/deploy.
@@ -32,6 +36,8 @@ Pembaruan 5 Oktober 2026: kandidat kode `106ae2c` pada branch `codex/hato-v2-rev
 | T17 | REVIEWABLE | `evidence/T17-release-candidate.md`, `release-runbook.md` | Tahan deploy sampai mapping, clone/reconciliation, auth nyata, visual web, dan dua perangkat lulus |
 
 ## Resume checkpoint
+
+- 14 October live follow-up: production database upgrade and approved catalog mapping completed with explicit user approval. Existing records preserved; manager login and live APIs pass; `operationalSchema: true`. Week/order writes were verified and rolled back, leaving no test records. See `evidence/2026-10-14-production-upgrade.md` for the ownership-specific migration sequence. Historical September verification and physical-device acceptance remain separate follow-ups.
 
 - 14 October: operational Ranking/Reports compatibility repaired while retaining restored layouts; 43 tests plus web build/native exports passed. Production application-data backup restored and migrated on a local clone with all original table contents preserved. Catalog mapping approved and tested on the clone. Password, historical payment attestation, hosted authorization and device acceptance remain pending. Latest evidence: `evidence/2026-10-14-release-preparation.md`.
 

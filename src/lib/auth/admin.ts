@@ -1,6 +1,7 @@
 import { createServerClient } from '@supabase/ssr'
 import { createClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
+import { isAllowedRequestOrigin } from './request-origin'
 
 export type AdminIdentity = { actorId: string }
 type AdminResult = { identity: AdminIdentity; error?: never } | { identity?: never; error: NextResponse }
@@ -28,11 +29,8 @@ export async function authenticateAdmin(request: NextRequest): Promise<AdminResu
   }
 
   if (!bearer && !['GET', 'HEAD', 'OPTIONS'].includes(request.method)) {
-    const allowedOrigin = process.env.NEXT_PUBLIC_APP_URL
     const origin = request.headers.get('origin')
-    let expectedOrigin: string | null = null
-    try { expectedOrigin = allowedOrigin ? new URL(allowedOrigin).origin : null } catch { expectedOrigin = null }
-    if (!expectedOrigin || !origin || origin !== expectedOrigin) {
+    if (!isAllowedRequestOrigin(origin, process.env.NEXT_PUBLIC_APP_URL, process.env.HATO_ALLOWED_ORIGINS)) {
       return { error: deny(403, 'INVALID_ORIGIN', 'Asal permintaan tidak diizinkan') }
     }
   }

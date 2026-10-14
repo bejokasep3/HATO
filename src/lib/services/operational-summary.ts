@@ -42,8 +42,8 @@ export async function getCycleSummary(prisma: PrismaClient, cycleId: string, now
 
   const groups = (['AYAM', 'TAHU'] as const).map((groupCode) => {
     const target = cycle.targets.find((item) => item.groupCode === groupCode)
-    if (cycle.rulesVersion !== 2 || !target) {
-      return { groupCode, unit: groupCode === 'AYAM' ? 'kg' : 'bungkus', target: null, demand: null, progress: null, status: 'unknown' as const }
+    if (!target || cycle.rulesVersion !== 2) {
+      return { groupCode, unit: groupCode === 'AYAM' ? 'kg' : 'bungkus', target: target?.quantity.toFixed(2) ?? null, demand: null, progress: null, status: 'unknown' as const }
     }
     const ids = new Set(cycle.weeklyPrices.filter((price) => price.targetGroupSnapshot === groupCode).map((price) => price.productId))
     const demand = formatScaled(cycle.orders.flatMap((order) => order.items)

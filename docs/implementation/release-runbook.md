@@ -4,6 +4,8 @@ Status: kandidat lokal untuk review. Dokumen ini tidak memberi izin migrasi atau
 
 ## Checkpoint 14 Oktober 2026
 
+Update produksi: setelah checkpoint persiapan di bawah, pengguna secara eksplisit menyetujui upgrade database. Upgrade dan mapping kini selesai, login admin terverifikasi, API produksi aktif, dan data lama terjaga. Gunakan `evidence/2026-10-14-production-upgrade.md` untuk status terbaru dan urutan migration dengan dua pemilik tabel. Koneksi aplikasi saja tidak dapat melakukan ALTER pada tabel lama milik `postgres`; jangan mengulang urutan lama tanpa memeriksa ownership. Saldo historis dan penerimaan perangkat fisik masih merupakan tindak lanjut terpisah.
+
 Gunakan `evidence/2026-10-14-release-preparation.md` sebagai status terbaru; detail kandidat 5 Oktober di bawah adalah bukti historis. Mapping katalog kini disetujui dan diuji pada clone. Backup aplikasi public berhasil dipulihkan, baseline cocok tanpa perbedaan, baseline adoption dan dua migration berikutnya lulus pada clone, serta seluruh data awal tetap sama. Backup ini tidak mencakup Auth/Storage.
 
 Urutan yang sudah diuji pada clone: verifikasi identitas database dan backup → bandingkan schema dengan baseline → `prisma migrate resolve --applied 20260928113603_baseline` → `prisma migrate deploy` → diff schema/cek preservasi → `scripts/migration/approved-hato-catalog.sql`. Jangan mengadopsi baseline pada schema yang berbeda atau menganggap saldo historis telah diverifikasi. Produksi masih belum diubah; password admin, saldo 20 order lama, hosted authorization dan perangkat fisik tetap memerlukan penyelesaian.

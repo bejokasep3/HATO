@@ -6,6 +6,7 @@ import { addCalendarDays } from '../../src/lib/domain/calendar'
 import { changeTargets, closeCycle, createCycle, openCycle, setCyclePrices } from '../../src/lib/services/cycles'
 import { ServiceError } from '../../src/lib/services/mutation'
 import { assertIsolatedTestDatabase } from '../../scripts/migration/test-db'
+import { getCycleSummary } from '../../src/lib/services/operational-summary'
 
 const prisma = new PrismaClient()
 const actorId = '00000000-0000-4000-8000-000000000099'
@@ -81,6 +82,25 @@ test('different keys racing for the same week create at most one cycle', async (
   assert.equal(results.filter((result) => result.status === 'fulfilled').length, 1)
   assert.equal(results.filter((result) => result.status === 'rejected').length, 1)
   assert.equal(await prisma.cycle.count({ where: { weekKey: new Date(`${periodStart}T00:00:00.000Z`) } }), 1)
+})
+
+test('legacy target corrections preserve historical prices, orders and unknown balances', async () => {
+  await assertIsolatedTestDatabase(prisma)
+  const cycle = await prisma.cycle.findFirstOrThrow({ where: { rulesVersion: null }, include: { weeklyPrices: true, orders: { include: { items: true, payments: true } } } })
+  const input = { actorId, key: randomUUID(), id: cycle.id, expectedVersion: cycle.version, reason: 'Verified target from historical notes', targets: [{ groupCode: 'AYAM' as const, quantity: '12.50' }, { groupCode: 'TAHU' as const, quantity: '18.00' }] }
+  const corrected = await changeTargets(prisma, input)
+  assert.deepEqual(await changeTargets(prisma, input), corrected)
+  const after = await prisma.cycle.findUniqueOrThrow({ where: { id: cycle.id }, include: { weeklyPrices: true, orders: { include: { items: true, payments: true } } } })
+  assert.equal(after.rulesVersion, null)
+  assert.equal(after.status, cycle.status)
+  assert.equal(after.periodStart.toISOString(), cycle.periodStart.toISOString())
+  assert.deepEqual(after.weeklyPrices, cycle.weeklyPrices)
+  assert.deepEqual(after.orders, cycle.orders)
+  const summary = await getCycleSummary(prisma, cycle.id)
+  assert.equal(summary.targets.find((target) => target.groupCode === 'AYAM')?.target, '12.50')
+  assert.equal(summary.targets.find((target) => target.groupCode === 'AYAM')?.demand, null)
+  await assert.rejects(() => changeTargets(prisma, { ...input, key: randomUUID() }), (error: unknown) => error instanceof ServiceError && error.code === 'STALE_VERSION')
+  await assert.rejects(() => openCycle(prisma, { actorId, key: randomUUID(), id: cycle.id, expectedVersion: after.version }), (error: unknown) => error instanceof ServiceError && error.code === 'LEGACY_CYCLE_READ_ONLY')
 })
 
 test.after(async () => prisma.$disconnect())

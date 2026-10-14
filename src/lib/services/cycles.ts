@@ -189,12 +189,17 @@ export async function closeCycle(prisma: PrismaClient, input: { actorId: string;
 export async function changeTargets(prisma: PrismaClient, input: { actorId: string; key: string; id: string; expectedVersion: number; reason: string; targets: TargetInput[] }) {
   const targets = [...input.targets].sort((a, b) => a.groupCode.localeCompare(b.groupCode))
   return runIdempotent(prisma, { actorId: input.actorId, operation: 'cycle.targets', key: input.key, payload: { id: input.id, expectedVersion: input.expectedVersion, reason: input.reason, targets } }, async (tx) => {
-    const cycle = await lockedCycle(tx, input.id)
+    await lockCycle(tx, input.id)
+    const cycle = await tx.cycle.findUniqueOrThrow({ where: { id: input.id }, include: { targets: true } })
     checkVersion(cycle.version, input.expectedVersion)
     if (cycle.periodState === 'closed') throw new ServiceError(409, 'CYCLE_CLOSED', 'Target siklus tertutup tidak dapat diubah')
     const before = cycle.targets.map((target) => ({ groupCode: target.groupCode, quantity: target.quantity.toFixed(2) }))
     for (const target of targets) {
-      await tx.cycleTarget.update({ where: { cycleId_groupCode: { cycleId: input.id, groupCode: target.groupCode } }, data: { quantity: target.quantity } })
+      await tx.cycleTarget.upsert({
+        where: { cycleId_groupCode: { cycleId: input.id, groupCode: target.groupCode } },
+        create: { cycleId: input.id, groupCode: target.groupCode, quantity: target.quantity, unit: target.groupCode === 'AYAM' ? 'kg' : 'bungkus' },
+        update: { quantity: target.quantity },
+      })
     }
     const updated = await tx.cycle.update({ where: { id: input.id }, data: { version: { increment: 1 } }, include: { targets: true } })
     await tx.auditEvent.create({ data: { actorId: input.actorId, entityType: 'cycle', entityId: input.id, action: 'targets_changed', before: { targets: before }, after: { targets }, reason: input.reason } })
