@@ -132,7 +132,7 @@ function TargetPanel({ target, variants }: { target: TargetSummary; variants: No
             <div className={`h-full rounded-full ${reached ? 'bg-emerald-700' : 'bg-amber-500'}`} style={{ width: `${Math.min(100, percentage)}%` }} />
           </div>
           <div className="mt-2 flex items-center justify-between text-xs text-slate-500">
-            <span>Barang datang / target {Number(target.progress.plannedPurchase).toLocaleString('id-ID')} {target.unit}</span>
+            <span>Barang datang / target {Number(target.target).toLocaleString('id-ID')} {target.unit}</span>
             <span className="font-bold tabular-nums text-slate-700">{percentage}%</span>
           </div>
         </div>
