@@ -11,12 +11,12 @@ export async function getCycleAvailability(db: Db, cycleId: string) {
     include: {
       weeklyPrices: { include: { product: true } },
       supplierRecap: { include: { items: true } },
-      goodsReceipt: { include: { items: true } },
-      orders: { where: { cancelledAt: null }, include: { items: true } },
+      goodsReceipt: { include: { items: { include: { product: true } } } },
+      orders: { where: { cancelledAt: null }, include: { items: { include: { product: true } } } },
     },
   })
   if (!cycle) throw new ServiceError(404, 'CYCLE_NOT_FOUND', 'Siklus tidak ditemukan')
-  if (cycle.rulesVersion !== 2) throw new ServiceError(409, 'LEGACY_CYCLE_READ_ONLY', 'Ketersediaan siklus lama belum diverifikasi')
+  const historical = cycle.rulesVersion !== 2
 
   const allocated = new Map<string, bigint>()
   const shipped = new Map<string, bigint>()
@@ -30,16 +30,21 @@ export async function getCycleAvailability(db: Db, cycleId: string) {
 
   const recap = new Map(cycle.supplierRecap?.items.map((item) => [item.productId, item.quantity.toFixed(2)]) ?? [])
   const received = new Map(cycle.goodsReceipt?.items.map((item) => [item.productId, item.receivedQty.minus(item.damagedQty).toFixed(2)]) ?? [])
-  const source = cycle.goodsReceipt?.status === 'confirmed' ? 'received' : cycle.supplierRecap ? 'planned' : 'unknown'
-  const items = cycle.weeklyPrices.map((price) => {
-    const allocatedQty = formatScaled(allocated.get(price.productId) ?? 0n)
-    const shippedQty = formatScaled(shipped.get(price.productId) ?? 0n)
-    const capacity = source === 'received' ? (received.get(price.productId) ?? '0.00') : source === 'planned' ? (recap.get(price.productId) ?? '0.00') : null
+  const source = historical ? 'unknown' : cycle.goodsReceipt?.status === 'confirmed' ? 'received' : cycle.supplierRecap ? 'planned' : 'unknown'
+  const products = new Map(cycle.weeklyPrices.map((price) => [price.productId, { productId: price.productId, productName: price.product.name, unit: price.unitSnapshot ?? price.product.unit }]))
+  if (historical) for (const order of cycle.orders) for (const item of order.items) {
+    if (!products.has(item.productId)) products.set(item.productId, { productId: item.productId, productName: item.product.name, unit: item.product.unit })
+  }
+  if (historical) for (const item of cycle.goodsReceipt?.items ?? []) {
+    if (!products.has(item.productId)) products.set(item.productId, { productId: item.productId, productName: item.product.name, unit: item.product.unit })
+  }
+  const items = [...products.values()].map((product) => {
+    const allocatedQty = formatScaled(allocated.get(product.productId) ?? 0n)
+    const shippedQty = formatScaled(shipped.get(product.productId) ?? 0n)
+    const capacity = source === 'received' ? (received.get(product.productId) ?? '0.00') : source === 'planned' ? (recap.get(product.productId) ?? '0.00') : null
     const balance = source === 'unknown' || capacity === null ? null : calculate(capacity, allocatedQty, shippedQty, source)
     return {
-      productId: price.productId,
-      productName: price.product.name,
-      unit: price.unitSnapshot ?? price.product.unit,
+      ...product,
       capacity,
       allocated: allocatedQty,
       shipped: shippedQty,
@@ -50,5 +55,5 @@ export async function getCycleAvailability(db: Db, cycleId: string) {
       source,
     }
   })
-  return { cycleId, cycleVersion: cycle.version, items }
+  return { cycleId, cycleVersion: cycle.version, historical, items }
 }

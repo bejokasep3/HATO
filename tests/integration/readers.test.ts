@@ -5,7 +5,9 @@ import { PrismaClient } from '@prisma/client'
 import { assertIsolatedTestDatabase } from '../../scripts/migration/test-db'
 import { addCalendarDays } from '../../src/lib/domain/calendar'
 import { getCycleAvailability } from '../../src/lib/services/availability'
-import { createCycle, openCycle, setCyclePrices } from '../../src/lib/services/cycles'
+import { changeTargets, createCycle, openCycle, setCyclePrices } from '../../src/lib/services/cycles'
+import { saveReceiptDraft } from '../../src/lib/services/inventory'
+import { ServiceError } from '../../src/lib/services/mutation'
 import { getDashboardSummary, getCycleSummary } from '../../src/lib/services/operational-summary'
 import { createOrder } from '../../src/lib/services/orders'
 import { addPayment } from '../../src/lib/services/payments'
@@ -80,3 +82,33 @@ test('operational readers use target snapshots and the payment ledger without wr
 })
 
 test.after(async () => prisma.$disconnect())
+
+test('historical targets remain visible and inventory reads preserve unknown stock', async () => {
+  await assertIsolatedTestDatabase(prisma, 'hato_recap')
+  const product = await prisma.product.findFirstOrThrow({ where: { targetGroup: 'AYAM', isActive: true } })
+  const receiptProduct = await prisma.product.findFirstOrThrow({ where: { targetGroup: 'TAHU', isActive: true } })
+  const group = await prisma.group.create({ data: { name: 'Historical reader fixture', level: 1 } })
+  const member = await prisma.member.create({ data: { name: 'Historical reader member', phone: '000', level: 1, groupId: group.id } })
+  const cycle = await prisma.cycle.create({ data: { label: 'Historical inventory', periodStart: new Date('2020-01-06'), orderDeadline: new Date('2020-01-09'), deliveryDate: new Date('2020-01-10'), status: 'completed' } })
+  const order = await prisma.order.create({ data: { cycleId: cycle.id, memberId: member.id, totalAmount: '100000', orderStatus: 'delivered', items: { create: { productId: product.id, quantity: '10', unitPrice: '10000', subtotal: '100000' } } } })
+  const cancelledMember = await prisma.member.create({ data: { name: 'Cancelled fixture', phone: '000', level: 1, groupId: group.id } })
+  await prisma.order.create({ data: { cycleId: cycle.id, memberId: cancelledMember.id, cancelledAt: new Date(), items: { create: { productId: product.id, quantity: '99', unitPrice: '10000', subtotal: '990000' } } } })
+  await changeTargets(prisma, { actorId, key: randomUUID(), id: cycle.id, expectedVersion: 0, reason: 'Historical target verified', targets: [{ groupCode: 'AYAM', quantity: '20' }, { groupCode: 'TAHU', quantity: '20' }] })
+  await prisma.goodsReceipt.create({ data: { cycleId: cycle.id, items: { create: { productId: receiptProduct.id, orderedQty: '5', receivedQty: '5', damagedQty: '1', purchasePrice: '1000' } } } })
+  const before = await prisma.cycle.findUniqueOrThrow({ where: { id: cycle.id }, include: { orders: { include: { items: true } }, goodsReceipt: { include: { items: true } } } })
+  const auditsBefore = await prisma.auditEvent.count()
+  const dashboard = await getDashboardSummary(prisma, cycle.id)
+  assert.equal(dashboard.targets.find((item) => item.groupCode === 'AYAM')?.target, '20.00')
+  assert.equal(dashboard.targets.find((item) => item.groupCode === 'TAHU')?.target, '20.00')
+  assert.equal(dashboard.targets.every((item) => item.demand === null && item.progress === null), true)
+  const inventory = await getCycleAvailability(prisma, cycle.id)
+  assert.equal(inventory.historical, true)
+  assert.equal(inventory.items.find((item) => item.productId === product.id)?.allocated, '10.00')
+  assert.equal(inventory.items.find((item) => item.productId === product.id)?.shipped, '10.00')
+  assert.equal(inventory.items.some((item) => item.productId === receiptProduct.id), true)
+  assert.equal(inventory.items.every((item) => item.source === 'unknown' && item.capacity === null && item.physicalRemaining === null && item.availableToOrder === null), true)
+  await assert.rejects(() => saveReceiptDraft(prisma, { actorId, key: randomUUID(), cycleId: cycle.id, expectedVersion: 1, items: [] }), (error: unknown) => error instanceof ServiceError && error.code === 'LEGACY_CYCLE_READ_ONLY')
+  assert.equal(await prisma.auditEvent.count(), auditsBefore)
+  assert.deepEqual(await prisma.cycle.findUniqueOrThrow({ where: { id: cycle.id }, include: { orders: { include: { items: true } }, goodsReceipt: { include: { items: true } } } }), before)
+  assert.equal((await prisma.order.findUniqueOrThrow({ where: { id: order.id } })).totalAmount.toFixed(2), '100000.00')
+})

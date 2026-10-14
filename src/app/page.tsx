@@ -111,8 +111,8 @@ function TargetPanel({ target, variants }: { target: TargetSummary; variants: No
     return (
       <div className="border-t border-slate-200 p-5 first:border-t-0 @2xl:border-l @2xl:border-t-0 @2xl:first:border-l-0">
         <div className="flex items-center justify-between gap-3">
-          <div><p className="font-bold text-slate-900">{title}</p><p className="mt-1 text-xs text-slate-500">Target histori belum diverifikasi</p></div>
-          <Badge variant="slate">Belum diketahui</Badge>
+          <div><p className="font-bold text-slate-900">{title}</p>{target.target !== null ? <p className="mt-1 text-sm text-slate-600">Target <span className="text-2xl font-black tabular-nums text-slate-950">{Number(target.target).toLocaleString('id-ID')}</span> {target.unit}</p> : <p className="mt-1 text-xs text-slate-500">Target belum ditetapkan</p>}</div>
+          <Badge variant="slate">Permintaan belum diketahui</Badge>
         </div>
       </div>
     )
@@ -163,7 +163,7 @@ function DashboardContent() {
     try {
       const query = cycleId ? `?cycleId=${encodeURIComponent(cycleId)}` : ''
       const result = await apiGet<DashboardData>(`/api/dashboard${query}`)
-      if (result.currentCycle) {
+      if (result.currentCycle?.rulesVersion === 2) {
         try {
           const recap = await apiGet<{ items: NonNullable<DashboardData['variants']> }>(`/api/cycles/${result.currentCycle.id}/supplier-recap`)
           result.variants = recap.items

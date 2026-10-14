@@ -1,6 +1,7 @@
 'use client'
 
 import { FormEvent, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { AlertTriangle, Check, PackageCheck, RefreshCw, Save, Truck } from 'lucide-react'
 import { toast } from 'sonner'
@@ -14,7 +15,7 @@ import { useOperationalMode } from '@/components/AppShell'
 type CycleListItem = { cycleId: string; cycleLabel: string; periodState: string | null; receiptStatus: string; totalOrders: number }
 type AvailabilityItem = { productId: string; productName: string; unit: string; capacity: string | null; allocated: string; shipped: string; availableToOrder: string | null; shortage: string | null; physicalRemaining: string | null; reserved: string | null; source: 'planned' | 'received' | 'unknown' }
 type ReceiptItem = { productId: string; orderedQty: string; receivedQty: string; damagedQty: string; purchasePrice: string; notes: string | null }
-type InventoryDetail = { cycleId: string; cycleVersion: number; items: AvailabilityItem[]; receipt: null | { id: string; status: 'draft' | 'confirmed'; supplierNote: string | null; version: number; confirmedAt: string | null; items: ReceiptItem[] } }
+type InventoryDetail = { cycleId: string; cycleVersion: number; historical?: boolean; items: AvailabilityItem[]; receipt: null | { id: string; status: 'draft' | 'confirmed'; supplierNote: string | null; version: number; confirmedAt: string | null; items: ReceiptItem[] } }
 type Order = { id: string; version: number; orderStatus: string; cancelledAt: string | null; member: { name: string; group?: { name: string } }; items: Array<{ id: string }>; totalAmount: string }
 type LineDraft = { receivedQty: string; damagedQty: string; purchasePrice: string; notes: string }
 
@@ -35,16 +36,21 @@ function InventoryContent() {
   const [error, setError] = useState<string | null>(null)
   const [confirmOpen, setConfirmOpen] = useState(false)
   const attemptRef = useRef<{ signature: string; key: string } | null>(null)
+  const loadRequestRef = useRef(0)
 
   const loadCycle = useCallback(async (id: string) => {
     if (!id) return
+    const request = ++loadRequestRef.current
     setLoading(true)
     setError(null)
+    setDetail(null)
+    setOrders([])
     try {
       const [nextDetail, nextOrders] = await Promise.all([
         apiGet<InventoryDetail>(`/api/inventory?cycleId=${encodeURIComponent(id)}`),
         apiGet<Order[]>(`/api/orders?cycleId=${encodeURIComponent(id)}`),
       ])
+      if (request !== loadRequestRef.current) return
       setDetail(nextDetail)
       setOrders(nextOrders.filter((order) => !order.cancelledAt))
       const saved = new Map(nextDetail.receipt?.items.map((item) => [item.productId, item]) ?? [])
@@ -60,9 +66,10 @@ function InventoryContent() {
       setSupplierNote(nextDetail.receipt?.supplierNote ?? '')
       attemptRef.current = null
     } catch (cause) {
+      if (request !== loadRequestRef.current) return
       setError(cause instanceof Error ? cause.message : 'Data barang gagal dimuat.')
     } finally {
-      setLoading(false)
+      if (request === loadRequestRef.current) setLoading(false)
     }
   }, [])
 
@@ -95,7 +102,6 @@ function InventoryContent() {
   function selectCycle(id: string) {
     setCycleId(id)
     router.replace(`/inventory?cycleId=${encodeURIComponent(id)}`)
-    void loadCycle(id)
   }
 
   function updateLine(productId: string, field: keyof LineDraft, value: string) {
@@ -167,7 +173,7 @@ function InventoryContent() {
   return <div className="mx-auto max-w-6xl space-y-6">
     <header className="border-b border-slate-200 pb-5"><div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between"><div><p className="text-xs font-bold text-emerald-800">Operasional barang</p><h1 className="mt-1 text-2xl font-black tracking-tight text-slate-950 sm:text-3xl">Barang masuk dan distribusi</h1><p className="mt-2 text-sm text-slate-600">Bandingkan rencana supplier dengan barang yang benar-benar datang sebelum membagikannya.</p></div><div className="flex gap-2"><select value={cycleId} onChange={(event) => selectCycle(event.target.value)} className="min-h-11 rounded-lg border border-slate-300 bg-white px-3 text-sm font-semibold">{cycles.map((cycle) => <option key={cycle.cycleId} value={cycle.cycleId}>{cycle.cycleLabel}</option>)}</select><Button variant="secondary" size="icon" aria-label="Muat ulang" onClick={() => void loadCycle(cycleId)} icon={<RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />} /></div></div></header>
     {error ? <div role="alert" className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800">{error}</div> : null}
-    {loading || !detail ? <div className="grid gap-3 grid-cols-[repeat(auto-fit,minmax(min(100%,180px),1fr))]" aria-busy="true">{[0,1,2,3].map((item) => <div key={item} className="h-24 animate-pulse rounded-xl bg-slate-200/60" />)}</div> : <>
+    {loading ? <div className="grid gap-3 grid-cols-[repeat(auto-fit,minmax(min(100%,180px),1fr))]" aria-busy="true">{[0,1,2,3].map((item) => <div key={item} className="h-24 animate-pulse rounded-xl bg-slate-200/60" />)}</div> : !detail ? <p className="text-sm text-slate-600">Data barang belum dapat ditampilkan. Gunakan tombol muat ulang untuk mencoba lagi.</p> : detail.historical ? <HistoricalInventory detail={detail} /> : <>
       <section className="grid gap-3 grid-cols-[repeat(auto-fit,minmax(min(100%,180px),1fr))]" aria-label="Ringkasan barang"><Metric label="Produk dalam siklus" value={String(summary.productCount)} /><Metric label="Produk tercatat datang" value={String(summary.receivedProducts)} /><Metric label="Produk bermasalah" value={String(Math.max(summary.damagedProducts, summary.shortageProducts))} danger={summary.damagedProducts > 0 || summary.shortageProducts > 0} /><Metric label="Estimasi modal" value={formatCurrency(summary.cost)} /></section>
       <section><div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="font-extrabold text-slate-950">Penerimaan per produk</h2><p className="mt-1 text-sm text-slate-600">Rencana berasal dari rekap supplier. Stok baru berubah setelah draf dikonfirmasi.</p></div><Badge variant={detail.receipt?.status === 'confirmed' ? 'emerald' : detail.receipt?.status === 'draft' ? 'amber' : 'slate'}>{detail.receipt?.status === 'confirmed' ? 'Sudah dikonfirmasi' : detail.receipt?.status === 'draft' ? 'Masih draf' : 'Belum dicatat'}</Badge></div>
         <form onSubmit={(event) => void saveDraft(event)} className="mt-4 overflow-hidden rounded-xl border border-slate-200 bg-white"><div className="hidden grid-cols-[1fr_repeat(4,minmax(100px,0.7fr))] gap-3 bg-slate-50 px-4 py-3 text-xs font-bold text-slate-600 lg:grid"><span>Produk</span><span className="text-right">Rencana</span><span className="text-right">Diterima</span><span className="text-right">Rusak</span><span className="text-right">Harga beli/unit</span></div><div className="divide-y divide-slate-100">{detail.items.map((item) => { const line = lines[item.productId]; return <div key={item.productId} className="grid gap-3 p-4 lg:grid-cols-[1fr_repeat(4,minmax(100px,0.7fr))] lg:items-center"><div><p className="text-sm font-extrabold text-slate-950">{item.productName}</p><p className="text-xs text-slate-500">{item.source === 'received' ? `Fisik tersisa ${Number(item.physicalRemaining ?? 0).toLocaleString('id-ID')} ${item.unit}` : 'Menunggu konfirmasi penerimaan'}</p>{Number(item.shortage ?? 0) > 0 ? <p className="mt-1 text-xs font-bold text-rose-800">Kurang {Number(item.shortage).toLocaleString('id-ID')} {item.unit}</p> : null}</div><LabeledValue label="Rencana" value={`${Number(item.capacity ?? 0).toLocaleString('id-ID')} ${item.unit}`} /><LineInput label="Diterima" value={line?.receivedQty ?? ''} unit={item.unit} disabled={!canMutate || detail.receipt?.status === 'confirmed'} onChange={(value) => updateLine(item.productId, 'receivedQty', value)} /><LineInput label="Rusak" value={line?.damagedQty ?? ''} unit={item.unit} disabled={!canMutate || detail.receipt?.status === 'confirmed'} onChange={(value) => updateLine(item.productId, 'damagedQty', value)} /><LineInput label="Harga beli" value={line?.purchasePrice ?? ''} unit="Rp" disabled={!canMutate || detail.receipt?.status === 'confirmed'} onChange={(value) => updateLine(item.productId, 'purchasePrice', value)} /></div>})}</div><div className="border-t border-slate-200 p-4"><label className="text-xs font-bold text-slate-700">Catatan supplier <span className="font-normal text-slate-500">(opsional)</span><textarea disabled={!canMutate || detail.receipt?.status === 'confirmed'} value={supplierNote} onChange={(event) => { setSupplierNote(event.target.value); attemptRef.current = null }} rows={2} className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm disabled:bg-slate-50" /></label>{detail.receipt?.status !== 'confirmed' ? <div className="mt-4 flex flex-col justify-end gap-2 sm:flex-row"><Button type="submit" variant="secondary" disabled={!canMutate || Boolean(saving)} icon={<Save className="h-4 w-4" />}>{saving === 'draft' ? 'Menyimpan…' : 'Simpan draf'}</Button><Button type="button" disabled={!canMutate || detail.receipt?.status !== 'draft' || Boolean(saving)} onClick={() => setConfirmOpen(true)} icon={<Check className="h-4 w-4" />}>Konfirmasi barang datang</Button></div> : null}</div></form>
@@ -176,6 +182,18 @@ function InventoryContent() {
       <Modal isOpen={confirmOpen} onClose={() => !saving && setConfirmOpen(false)} title="Konfirmasi barang datang?" description="Setelah dikonfirmasi, angka penerimaan tidak dapat diubah." icon={<PackageCheck className="h-4 w-4" />}><div className="space-y-3 text-sm text-slate-700"><p>Pastikan jumlah diterima, rusak, dan harga beli sudah sesuai catatan supplier.</p>{summary.damagedProducts > 0 || summary.shortageProducts > 0 ? <div className="flex gap-2 rounded-lg bg-amber-50 p-3 text-amber-950"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" /><span>Ada selisih atau barang rusak. Data ini akan tetap terlihat setelah konfirmasi.</span></div> : null}<div className="flex justify-end gap-2 pt-2"><Button variant="ghost" onClick={() => setConfirmOpen(false)}>Periksa lagi</Button><Button disabled={!canMutate || Boolean(saving)} onClick={() => void confirmReceipt()}>{saving === 'confirm' ? 'Mengonfirmasi…' : 'Ya, konfirmasi'}</Button></div></div></Modal>
     </>}
   </div>
+}
+
+function HistoricalInventory({ detail }: { detail: InventoryDetail }) {
+  const receipts = new Map(detail.receipt?.items.map((item) => [item.productId, item]) ?? [])
+  return <section className="space-y-5" aria-labelledby="historical-inventory-title">
+    <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950"><h2 id="historical-inventory-title" className="font-bold">Catatan barang siklus lama</h2><p className="mt-2">Jumlah pesanan yang tersimpan ditampilkan di bawah. Target pembelian tidak berarti barang sudah diterima. Stok tersedia dan sisa fisik belum dapat dihitung sampai penerimaan lama diverifikasi.</p><p className="mt-2">{detail.receipt ? 'Catatan penerimaan lama tersedia, tetapi belum diverifikasi untuk perhitungan stok.' : 'Belum ada catatan barang datang untuk siklus ini.'}</p></div>
+    <div className="divide-y divide-slate-200 border-y border-slate-200">{detail.items.map((item) => {
+      const receipt = receipts.get(item.productId)
+      return <div key={item.productId} className="py-4"><h3 className="font-bold text-slate-950">{item.productName}</h3><dl className="mt-3 grid gap-3 sm:grid-cols-3"><div><dt className="text-xs text-slate-600">Jumlah pesanan tercatat</dt><dd className="mt-1 font-semibold tabular-nums">{Number(item.allocated).toLocaleString('id-ID')} {item.unit}</dd></div><div><dt className="text-xs text-slate-600">Penerimaan tercatat</dt><dd className="mt-1 font-semibold tabular-nums">{receipt ? `${Number(receipt.receivedQty).toLocaleString('id-ID')} ${item.unit}` : 'Belum dicatat'}</dd></div><div><dt className="text-xs text-slate-600">Barang rusak tercatat</dt><dd className="mt-1 font-semibold tabular-nums">{receipt ? `${Number(receipt.damagedQty).toLocaleString('id-ID')} ${item.unit}` : 'Belum dicatat'}</dd></div></dl></div>
+    })}{detail.items.length === 0 ? <p className="py-6 text-sm text-slate-600">Belum ada produk atau pesanan tercatat pada siklus ini.</p> : null}</div>
+    <div className="flex flex-wrap gap-x-6 gap-y-2"><Link href={`/cycles/${detail.cycleId}`} className="inline-flex min-h-11 items-center text-sm font-bold text-emerald-800">Lihat target dan rekap siklus</Link><Link href={`/orders?cycleId=${detail.cycleId}`} className="inline-flex min-h-11 items-center text-sm font-bold text-emerald-800">Lihat pesanan tercatat</Link></div>
+  </section>
 }
 
 function Metric({ label, value, danger }: { label: string; value: string; danger?: boolean }) { return <div className="rounded-xl border border-slate-200 bg-white p-4"><p className="text-xs font-semibold text-slate-500">{label}</p><p className={`mt-1 text-xl font-black tabular-nums ${danger ? 'text-rose-800' : 'text-slate-950'}`}>{value}</p></div> }

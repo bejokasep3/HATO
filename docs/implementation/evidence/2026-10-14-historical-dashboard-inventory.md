@@ -1,0 +1,9 @@
+# Historical targets and inventory display
+
+The dashboard hid saved historical targets because its unknown-demand branch also hid the target. It now displays a saved target independently, including explicit zero, while demand and progress remain unknown. It no longer requests the operational supplier recap for an imported cycle or displays the resulting generic variant-loading warning.
+
+Barang previously rejected imported cycles and then displayed loading placeholders after the request had failed. Inventory reads now return a historical flag and recorded per-product order quantities, including products missing from weekly prices and receipt-only products. Cancelled orders are excluded. Historical stock capacity, availability and physical remainder stay null; a target or an old delivery status does not prove physical receipt. The web view shows recorded receipt/damage quantities if present, an explicit missing-receipt explanation otherwise, and links to cycle/order records. It does not expose operational receipt/distribution controls for historical cycles. Server-side historical write restrictions remain in place.
+
+Loading placeholders are now limited to active loads. Failed loads clear the previous cycle detail and offer retry. A request counter ignores stale cycle-detail responses, and selection no longer starts duplicate detail requests.
+
+Validation: 32 domain, contract and reader integration tests passed against the isolated loopback hato_recap database. The new historical case verifies saved 20/20 targets, unknown demand, exact recorded quantities, cancelled-order exclusion, receipt-only products, unknown stock, rejected historical receipt writes and no changes to historical records or audit rows during reads. Changed-file lint and Next.js production build passed. No production records or schema are changed by this fix. Native presentation is outside this web fix.
