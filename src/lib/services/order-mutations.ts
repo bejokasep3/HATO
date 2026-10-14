@@ -100,7 +100,6 @@ export async function cancelOrder(prisma: PrismaClient, input: { actorId: string
     await tx.payment.updateMany({ where: { orderId: order.id, reversedAt: null }, data: { reversedAt: cancelledAt, reversedBy: input.actorId, reversalReason: input.reason } })
     const updated = await tx.order.update({ where: { id: input.id }, data: { cancelledAt, cancellationReason: input.reason, paymentStatus: 'unpaid', paidAt: null, ...(order.cycle.rulesVersion === 2 && order.cycle.periodState === 'draft' ? {} : { ledgerReconciledAt: order.ledgerReconciledAt ?? cancelledAt, ledgerReconciledBy: order.ledgerReconciledBy ?? input.actorId }), version: { increment: 1 } } })
     await tx.cycle.update({ where: { id: order.cycleId }, data: { version: { increment: 1 } } })
-    await tx.rotationSchedule.updateMany({ where: { cycleId: order.cycleId, memberId: order.memberId }, data: { status: 'scheduled' } })
     await tx.auditEvent.create({ data: { actorId: input.actorId, entityType: 'order', entityId: input.id, action: 'cancelled', reason: input.reason, before: { totalAmount: order.totalAmount.toFixed(2), paidAmount: effectivePaid(order.payments), orderStatus: order.orderStatus }, after: { cancelledAt: cancelledAt.toISOString(), paidAmount: '0.00' } } })
     return { status: 200, body: { id: input.id, version: updated.version, cancelledAt: cancelledAt.toISOString() } }
   })
@@ -113,7 +112,6 @@ export async function restoreOrder(prisma: PrismaClient, input: { actorId: strin
     if (!order.cancelledAt) throw new ServiceError(409, 'ORDER_NOT_CANCELLED', 'Pesanan tidak sedang dibatalkan')
     const updated = await tx.order.update({ where: { id: input.id }, data: { cancelledAt: null, cancellationReason: null, orderStatus: 'pending', version: { increment: 1 } } })
     await tx.cycle.update({ where: { id: order.cycleId }, data: { version: { increment: 1 } } })
-    await tx.rotationSchedule.updateMany({ where: { cycleId: order.cycleId, memberId: order.memberId }, data: { status: 'ordered' } })
     await tx.auditEvent.create({ data: { actorId: input.actorId, entityType: 'order', entityId: input.id, action: 'restored', reason: input.reason } })
     return { status: 200, body: { id: input.id, version: updated.version, cancelledAt: null } }
   })

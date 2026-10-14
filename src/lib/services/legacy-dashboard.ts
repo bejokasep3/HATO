@@ -110,7 +110,7 @@ export async function getLegacyDashboardSummary(prisma: PrismaClient, cycleId?: 
 
   const totalMembers = Number(memberCounts[0]?.total ?? 0n)
   if (!selected) {
-    return { evaluatedAt: now.toISOString(), hasCycle: false, allCycles, currentCycle: null, targets: [], rotation: null, finances: null, recentOrders: [], totalMembers }
+    return { evaluatedAt: now.toISOString(), hasCycle: false, allCycles, currentCycle: null, targets: [], orderedMembers: [], rotation: null, finances: null, recentOrders: [], totalMembers }
   }
 
   const [targetRows, itemRows, orders, rotationRows, receiptRows] = await Promise.all([
@@ -212,6 +212,7 @@ export async function getLegacyDashboardSummary(prisma: PrismaClient, cycleId?: 
       receiptStatus: receiptRows[0]?.status ?? 'none',
     },
     targets,
+    orderedMembers: [...new Map(orders.map((order) => [order.member_id, { id: order.member_id, name: order.member_name, groupName: order.group_name ?? '-', orderId: order.id }])).values()].sort((a, b) => a.name.localeCompare(b.name, 'id-ID')),
     rotation: {
       scheduledCount: members.length,
       orderedCount: members.filter((member) => member.isOrdered).length,

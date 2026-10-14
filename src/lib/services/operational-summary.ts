@@ -78,6 +78,7 @@ export async function getCycleSummary(prisma: PrismaClient, cycleId: string, now
       receiptStatus: cycle.goodsReceipt?.status ?? 'none',
     },
     targets: groups,
+    orderedMembers: [...new Map(cycle.orders.map((order) => [order.memberId, { id: order.memberId, name: order.member.name, groupName: order.member.group?.name ?? '-', orderId: order.id }])).values()].sort((a, b) => a.name.localeCompare(b.name, 'id-ID')),
     rotation: {
       scheduledCount: rotationMembers.length,
       orderedCount: rotationMembers.length - pendingMembers.length,
@@ -130,7 +131,7 @@ export async function getDashboardSummary(prisma: PrismaClient, cycleId?: string
     deliveryDate: cycle.deliveryDate.toISOString().slice(0, 10),
     periodState: cycle.periodState, status: cycle.status, rulesVersion: cycle.rulesVersion,
   }))
-  if (!selected) return { evaluatedAt: now.toISOString(), hasCycle: false, allCycles, currentCycle: null, targets: [], rotation: null, finances: null, recentOrders: [], totalMembers }
+  if (!selected) return { evaluatedAt: now.toISOString(), hasCycle: false, allCycles, currentCycle: null, targets: [], orderedMembers: [], rotation: null, finances: null, recentOrders: [], totalMembers }
   const summary = await getCycleSummary(prisma, selected.id, now)
-  return { evaluatedAt: now.toISOString(), hasCycle: true, allCycles, currentCycle: summary.cycle, targets: summary.targets, rotation: summary.rotation, finances: summary.finances, recentOrders: summary.recentOrders, totalMembers }
+  return { evaluatedAt: now.toISOString(), hasCycle: true, allCycles, currentCycle: summary.cycle, targets: summary.targets, orderedMembers: summary.orderedMembers, rotation: summary.rotation, finances: summary.finances, recentOrders: summary.recentOrders, totalMembers }
 }

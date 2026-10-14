@@ -72,6 +72,8 @@ test('operational readers use target snapshots and the payment ledger without wr
     purchaseValue: null,
   })
   assert.equal(dashboard.finances?.knownOutstanding, '40000.00')
+  assert.deepEqual(dashboard.orderedMembers, [{ id: member.id, name: member.name, groupName: group.name, orderId: order.body.id }])
+  assert.equal(await prisma.rotationSchedule.count({ where: { cycleId } }), 0)
   assert.equal(availability.items.every((item) => item.source === 'unknown'), true)
   assert.equal(availability.items.every((item) => item.availableToOrder === null), true)
   assert.equal(targetReport.cycleReports.find((cycle) => cycle.id === cycleId)?.targets[0]?.status, 'known')
@@ -93,11 +95,14 @@ test('historical order demand restores target progress while inventory stock sta
   const order = await prisma.order.create({ data: { cycleId: cycle.id, memberId: member.id, totalAmount: '100000', orderStatus: 'delivered', items: { create: { productId: product.id, quantity: '10', unitPrice: '10000', subtotal: '100000' } } } })
   const cancelledMember = await prisma.member.create({ data: { name: 'Cancelled fixture', phone: '000', level: 1, groupId: group.id } })
   await prisma.order.create({ data: { cycleId: cycle.id, memberId: cancelledMember.id, cancelledAt: new Date(), items: { create: { productId: product.id, quantity: '99', unitPrice: '10000', subtotal: '990000' } } } })
+  await prisma.rotationSchedule.create({ data: { cycleId: cycle.id, memberId: cancelledMember.id, status: 'scheduled' } })
+  await prisma.member.update({ where: { id: member.id }, data: { isActive: false } })
   await changeTargets(prisma, { actorId, key: randomUUID(), id: cycle.id, expectedVersion: 0, reason: 'Historical target verified', targets: [{ groupCode: 'AYAM', quantity: '20' }, { groupCode: 'TAHU', quantity: '20' }] })
   await prisma.goodsReceipt.create({ data: { cycleId: cycle.id, items: { create: { productId: receiptProduct.id, orderedQty: '5', receivedQty: '5', damagedQty: '1', purchasePrice: '1000' } } } })
   const before = await prisma.cycle.findUniqueOrThrow({ where: { id: cycle.id }, include: { orders: { include: { items: true } }, goodsReceipt: { include: { items: true } } } })
   const auditsBefore = await prisma.auditEvent.count()
   const dashboard = await getDashboardSummary(prisma, cycle.id)
+  assert.deepEqual(dashboard.orderedMembers.map((entry) => entry.id), [member.id])
   assert.equal(dashboard.targets.find((item) => item.groupCode === 'AYAM')?.target, '20.00')
   assert.equal(dashboard.targets.find((item) => item.groupCode === 'TAHU')?.target, '20.00')
   const chicken = dashboard.targets.find((item) => item.groupCode === 'AYAM')!

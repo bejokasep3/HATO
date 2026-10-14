@@ -41,7 +41,7 @@ test('cycle create, replay, open, target change and close leave legacy records i
   assert.equal(draft.targets.length, 2)
   assert.equal(draft.weeklyPrices.length, 1)
   assert.equal(draft.weeklyPrices[0].targetGroupSnapshot, 'AYAM')
-  assert.equal(draft.rotationSchedules.length, 1)
+  assert.equal(draft.rotationSchedules.length, 0)
   await prisma.weeklyPrice.updateMany({ where: { cycleId }, data: { price: 0, consumerPrice: 0, traderPrice: 0 } })
   await assert.rejects(
     () => openCycle(prisma, { actorId, key: randomUUID(), id: cycleId, expectedVersion: 0 }),

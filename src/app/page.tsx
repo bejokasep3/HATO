@@ -4,8 +4,8 @@ import { Suspense, useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import {
-  AlertTriangle, ArrowRight, CalendarDays, CheckCircle2, CircleDollarSign,
-  Clock3, Plus, RefreshCw, Users,
+  AlertTriangle, ArrowRight, CalendarDays, CircleDollarSign,
+  Plus, RefreshCw, Users,
 } from 'lucide-react'
 import { StartWeekButton } from '@/components/StartWeekButton'
 import { apiGet } from '@/lib/api-client'
@@ -54,12 +54,7 @@ type DashboardData = {
   allCycles: CycleSummary[]
   currentCycle: CycleSummary | null
   targets: TargetSummary[]
-  rotation: null | {
-    scheduledCount: number
-    orderedCount: number
-    pendingMembers: Array<{ id: string; name: string; groupName: string; role: string; isOrdered: boolean }>
-    members: Array<{ id: string; name: string; groupName: string; role: string; isOrdered: boolean }>
-  }
+  orderedMembers: Array<{ id: string; name: string; groupName: string; orderId: string }>
   finances: null | {
     orderCount: number
     orderValue: string
@@ -208,7 +203,7 @@ function DashboardContent() {
   }
 
   const ActionIcon = action.icon
-  const rotation = data.rotation
+  const orderedMembers = data.orderedMembers ?? []
   const finances = data.finances
   const cycleHref = (path: string) => withCycle(path, cycle.id)
 
@@ -246,15 +241,9 @@ function DashboardContent() {
 
       <div className="grid items-start gap-6 @4xl:grid-cols-[minmax(0,1.7fr)_minmax(0,1fr)]">
         <div className="min-w-0 space-y-6">
-        <section className="rounded-xl border border-slate-200 bg-white p-5" aria-labelledby="rotation-heading">
-          <div>
-            <div className="flex items-center justify-between gap-3"><div><h2 id="rotation-heading" className="font-extrabold text-slate-950">Giliran anggota</h2>{rotation && rotation.scheduledCount > 0 ? <p className="mt-1 text-sm text-slate-600">{rotation.orderedCount} dari {rotation.scheduledCount} anggota sudah memesan</p> : null}</div><Users className="h-5 w-5 shrink-0 text-slate-500" /></div>
-            <div className="mt-4 divide-y divide-slate-100 border-y border-slate-200">
-              {rotation?.pendingMembers.slice(0, 5).map((member) => <div key={member.id} className="flex items-center justify-between gap-3 py-3"><div className="min-w-0"><p className="truncate text-sm font-bold text-slate-900">{member.name}</p><p className="truncate text-xs text-slate-500">{member.groupName}</p></div><Badge variant="amber" size="sm"><Clock3 className="h-3 w-3" /> Belum pesan</Badge></div>)}
-              {rotation && rotation.scheduledCount > 0 && rotation.pendingMembers.length === 0 ? <div className="flex items-center gap-2 py-4 text-sm font-semibold text-emerald-800"><CheckCircle2 className="h-4 w-4" /> Semua anggota giliran sudah memesan.</div> : null}
-              {!rotation || rotation.scheduledCount === 0 ? <p className="py-4 text-sm text-slate-500">Belum ada anggota yang dijadwalkan.</p> : null}
-            </div>
-          </div>
+        <section className="rounded-xl border border-slate-200 bg-white p-5" aria-labelledby="ordering-heading">
+          <div className="flex items-center justify-between gap-3"><div><h2 id="ordering-heading" className="font-extrabold text-slate-950">Anggota yang memesan</h2><p className="mt-1 text-sm text-slate-600">{orderedMembers.length} anggota pada minggu yang dipilih</p></div><Users className="h-5 w-5 shrink-0 text-slate-500" /></div>
+          <div className="mt-4 divide-y divide-slate-100 border-y border-slate-200">{orderedMembers.map((member) => <div key={member.id} className="flex items-center justify-between gap-3 py-3"><div className="min-w-0"><p className="break-words text-sm font-bold text-slate-900">{member.name}</p><p className="text-xs text-slate-500">{member.groupName}</p></div><Badge variant="emerald" size="sm">Sudah pesan</Badge></div>)}{orderedMembers.length === 0 ? <p className="py-4 text-sm text-slate-500">Belum ada anggota yang memesan pada minggu ini.</p> : null}</div>
         </section>
 
       <section className="@container/orders rounded-xl border border-slate-200 bg-white p-5" aria-labelledby="recent-heading">

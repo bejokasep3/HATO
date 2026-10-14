@@ -71,7 +71,6 @@ export async function createOrder(prisma: PrismaClient, input: {
         })) },
       }, include: { items: true },
     })
-    await tx.rotationSchedule.updateMany({ where: { cycleId: input.cycleId, memberId: input.memberId }, data: { status: 'ordered' } })
     await tx.cycle.update({ where: { id: input.cycleId }, data: { version: { increment: 1 } } })
     await tx.auditEvent.create({ data: {
       actorId: input.actorId, entityType: 'order', entityId: created.id, action: 'created',

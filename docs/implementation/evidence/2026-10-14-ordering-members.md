@@ -1,0 +1,7 @@
+# Replace member rotation with actual ordering members
+
+The web dashboard now shows every distinct member with an active order in the selected cycle, sorted by name, with their group and a Sudah pesan label. Members are included regardless of past rotation assignments or current active-member status. Cancelled orders and assigned members with no active order are excluded. An empty cycle has a clear no-orders message. Recent orders remain available separately.
+
+New cycles no longer generate rotation assignments. Creating, deleting or restoring an order no longer updates old rotation rows. The rotation POST/DELETE endpoints return authenticated HTTP 410 ROTATION_REMOVED. Existing historical assignment rows and their read endpoint are preserved; no production data deletion or schema migration is performed. Existing response rotation metadata is retained only for compatibility, while the web dashboard uses the new orderedMembers list. Native screens are unchanged in this web release.
+
+Validation: 33 domain/contract/order/reader cases and 4 cycle/new-week cases passed on isolated synthetic databases. Reader checks cover ordering without an assignment, exclusion of a scheduled member whose order was cancelled, inclusion of an inactive member's recorded order, exact membership and no reader writes. New-week tests assert zero automatically created rotation rows. Changed-file lint and Next.js production build passed.

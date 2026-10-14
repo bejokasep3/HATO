@@ -43,18 +43,6 @@ function checkVersion(actual: number, expected: number) {
   if (actual !== expected) throw new ServiceError(409, 'STALE_VERSION', 'Data siklus telah berubah; muat ulang', { currentVersion: actual })
 }
 
-async function prepareRotation(tx: Tx, cycleId: string) {
-  const groups = await tx.group.findMany({
-    where: { isActive: true },
-    include: { members: { where: { isActive: true }, include: { rotationSchedules: { orderBy: { createdAt: 'desc' }, take: 1 } } } },
-  })
-  const selected = groups.flatMap((group) => [...group.members]
-    .sort((a, b) => (a.rotationSchedules[0]?.createdAt.getTime() ?? 0) - (b.rotationSchedules[0]?.createdAt.getTime() ?? 0))
-    .slice(0, 2)
-    .map((member) => ({ cycleId, memberId: member.id, status: 'scheduled' })))
-  if (selected.length) await tx.rotationSchedule.createMany({ data: selected, skipDuplicates: true })
-}
-
 export async function createCycle(
   prisma: PrismaClient,
   input: { actorId: string; key: string; periodStart: string; targets: TargetInput[]; notes?: string | null; copyPreviousPrices?: boolean },
@@ -110,7 +98,6 @@ export async function createCycle(
         quantityScaleSnapshot: product.quantityScale,
       } })
     }
-    await prepareRotation(tx, cycle.id)
     await tx.auditEvent.create({ data: {
       actorId: input.actorId, entityType: 'cycle', entityId: cycle.id, action: 'created',
       after: { periodStart: input.periodStart, targets },
