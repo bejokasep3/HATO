@@ -1,5 +1,7 @@
 # Status implementasi
 
+14 October follow-up: web payments now includes explicit historical opening-balance confirmation with an amount and verification note. Actual historical amounts remain for managers to confirm. See evidence/2026-10-14-opening-balance.md for validation and limits.
+
 14 October follow-up: production browser saves had a localhost-only origin setting; production configuration and exact alias handling are corrected. Imported September targets can be recorded independently of financial reconciliation, without changing their original orders/prices. See `evidence/2026-10-14-production-save-fix.md` for browser-cookie verification requirements and current test evidence.
 
 Status terbaru 14 Oktober 2026: kode `f58104a` sudah di `main` dan produksi. Upgrade database produksi serta mapping katalog yang disetujui telah selesai; login admin dan API produksi terverifikasi, `operationalSchema: true`, dan seluruh data awal tetap sama. Pembuatan minggu/pesanan berhasil diuji lalu di-rollback. Refresh aplikasi untuk keluar dari mode baca-saja. Siklus September yang diimpor masih memerlukan verifikasi historis sebelum diedit. Bukti: `evidence/2026-10-14-production-upgrade.md`. Catatan tanggal sebelumnya di bawah adalah riwayat, bukan status produksi terkini.

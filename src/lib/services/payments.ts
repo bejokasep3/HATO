@@ -1,6 +1,6 @@
 import { Prisma, type PrismaClient } from '@prisma/client'
 import { assertPaymentAllowed, paymentSummary } from '../domain/payments'
-import { parseScaled } from '../domain/money'
+import { formatScaled, parseScaled } from '../domain/money'
 import { ServiceError, runIdempotent, type Tx } from './mutation'
 
 async function lockOrder(tx: Tx, orderId: string) {
@@ -28,6 +28,7 @@ export async function getOrderPayments(prisma: PrismaClient, orderId: string) {
   if (!order) throw new ServiceError(404, 'ORDER_NOT_FOUND', 'Pesanan tidak ditemukan')
   return {
     orderId,
+    canConfirmOpeningBalance: !order.ledgerReconciledAt && order.cycle.rulesVersion !== 2 && !order.cancelledAt && order.payments.length === 0,
     pricingPending: order.cycle.rulesVersion === 2 && order.cycle.periodState === 'draft',
     orderStatus: order.orderStatus,
     cancelledAt: order.cancelledAt?.toISOString() ?? null,
@@ -49,6 +50,47 @@ export async function getOrderPayments(prisma: PrismaClient, orderId: string) {
       reversalReason: payment.reversalReason,
     })),
   }
+}
+
+export async function confirmOpeningBalance(prisma: PrismaClient, input: {
+  actorId: string; key: string; orderId: string; expectedVersion: number; paidAmount: string; reason: string
+}) {
+  let paid: bigint
+  try { paid = parseScaled(input.paidAmount, 2, 10) }
+  catch { throw new ServiceError(400, 'INVALID_OPENING_AMOUNT', 'Nominal yang sudah dibayar tidak valid') }
+  if (!input.reason.trim()) throw new ServiceError(400, 'REASON_REQUIRED', 'Catatan pemeriksaan wajib diisi')
+  const paidAmount = formatScaled(paid)
+  return runIdempotent(prisma, {
+    actorId: input.actorId, operation: 'payment.confirm_opening_balance', key: input.key,
+    payload: { orderId: input.orderId, expectedVersion: input.expectedVersion, paidAmount, reason: input.reason.trim() },
+  }, async (tx) => {
+    const rows = await tx.$queryRaw<{ id: string }[]>`SELECT id FROM orders WHERE id = ${input.orderId}::uuid FOR UPDATE`
+    if (!rows.length) throw new ServiceError(404, 'ORDER_NOT_FOUND', 'Pesanan tidak ditemukan')
+    const order = await tx.order.findUniqueOrThrow({ where: { id: input.orderId }, include: { payments: true, cycle: true } })
+    if (order.version !== input.expectedVersion) throw new ServiceError(409, 'STALE_VERSION', 'Saldo telah berubah; muat ulang sebelum konfirmasi')
+    if (order.ledgerReconciledAt) throw new ServiceError(409, 'BALANCE_ALREADY_CONFIRMED', 'Saldo awal sudah dikonfirmasi')
+    if (order.cycle.rulesVersion === 2) throw new ServiceError(409, 'NOT_LEGACY_ORDER', 'Pesanan minggu baru harus dihitung melalui penguncian harga')
+    if (order.cancelledAt) throw new ServiceError(409, 'ORDER_CANCELLED', 'Pesanan dibatalkan')
+    if (order.payments.length) throw new ServiceError(409, 'EXISTING_LEDGER_ENTRIES', 'Pesanan sudah memiliki catatan pembayaran; periksa catatan sebelum mengonfirmasi saldo')
+    const total = order.totalAmount.toFixed(2)
+    if (paid > parseScaled(total, 2, 10)) throw new ServiceError(409, 'OPENING_EXCEEDS_TOTAL', 'Jumlah yang sudah dibayar melebihi nilai pesanan')
+    const now = new Date()
+    if (paid > 0n) await tx.payment.create({ data: {
+      orderId: order.id, amount: paidAmount, method: 'other', source: 'legacy_opening_balance',
+      legacySourceOrderId: order.id, actorId: input.actorId, note: input.reason.trim(), occurredAt: null,
+    } })
+    const balance = paymentSummary(total, paid > 0n ? [{ amount: paidAmount, reversed: false }] : [], true)
+    const updated = await tx.order.update({ where: { id: order.id }, data: {
+      ledgerReconciledAt: now, ledgerReconciledBy: input.actorId, version: { increment: 1 },
+      paymentStatus: balance.status, paidAt: balance.status === 'paid' ? order.paidAt : null,
+    } })
+    await tx.auditEvent.create({ data: {
+      actorId: input.actorId, entityType: 'order', entityId: order.id, action: 'opening_balance_confirmed',
+      before: { paymentStatus: order.paymentStatus, totalAmount: total, ledgerReconciled: false },
+      after: { paidAmount, outstandingAmount: balance.outstandingAmount, ledgerReconciled: true }, reason: input.reason.trim(),
+    } })
+    return { status: 200, body: { orderId: order.id, orderVersion: updated.version, summary: balance } }
+  })
 }
 
 export async function addPayment(prisma: PrismaClient, input: {

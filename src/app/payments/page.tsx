@@ -50,6 +50,8 @@ type PaymentEntry = {
 }
 type OrderPayments = {
   orderId: string
+  version: number
+  canConfirmOpeningBalance?: boolean
   pricingPending?: boolean
   cancelledAt: string | null
   member: { id: string; name: string; groupName: string | null }
@@ -119,7 +121,11 @@ function PaymentsContent() {
   const [reverseAttempt, setReverseAttempt] = useState<{ signature: string; key: string } | null>(null)
   const [loading, setLoading] = useState(true)
   const [loadingOrder, setLoadingOrder] = useState(false)
-  const [saving, setSaving] = useState<'payment' | 'reverse' | null>(null)
+  const [saving, setSaving] = useState<'payment' | 'reverse' | 'opening' | null>(null)
+  const [openingForm, setOpeningForm] = useState(false)
+  const [openingAmount, setOpeningAmount] = useState('')
+  const [openingReason, setOpeningReason] = useState('')
+  const [openingAttempt, setOpeningAttempt] = useState<{ signature: string; key: string } | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   const updateUrl = useCallback((next: { cycleId?: string; groupId?: string; orderId?: string | null }) => {
@@ -163,6 +169,10 @@ function PaymentsContent() {
       setReversingId(null)
       setReversalReason('')
       setReverseAttempt(null)
+      setOpeningForm(false)
+      setOpeningAmount('')
+      setOpeningReason('')
+      setOpeningAttempt(null)
     } catch (cause) {
       toast.error(cause instanceof Error ? cause.message : 'Rincian pembayaran gagal dimuat.')
       updateUrl({ orderId: null })
@@ -276,6 +286,28 @@ function PaymentsContent() {
     }
   }
 
+  async function submitOpeningBalance(event: FormEvent) {
+    event.preventDefault()
+    if (!selectedOrder?.canConfirmOpeningBalance || !canMutate) return
+    const paidAmount = openingAmount.trim().replace(',', '.')
+    if (!/^\d+(?:\.\d{1,2})?$/.test(paidAmount) || Number(paidAmount) > Number(selectedOrder.totalAmount)) {
+      toast.error('Isi jumlah yang sudah dibayar, dari Rp0 sampai nilai pesanan.')
+      return
+    }
+    const payload = { expectedVersion: selectedOrder.version, paidAmount, reason: openingReason.trim() }
+    const signature = JSON.stringify(payload)
+    const attempt = openingAttempt?.signature === signature ? openingAttempt : { signature, key: newIdempotencyKey() }
+    setOpeningAttempt(attempt)
+    setSaving('opening')
+    try {
+      await apiPost(`/api/orders/${encodeURIComponent(selectedOrder.orderId)}/opening-balance`, payload, { idempotencyKey: attempt.key })
+      toast.success('Saldo awal dikonfirmasi. Sisa tagihan sudah diperbarui.')
+      await Promise.all([loadOrder(selectedOrder.orderId), loadReceivables(1, cycleId, groupId)])
+      setPage(1)
+    } catch (cause) { toast.error(cause instanceof Error ? cause.message : 'Konfirmasi gagal. Periksa lalu coba lagi.') }
+    finally { setSaving(null) }
+  }
+
   return (
     <div className="mx-auto max-w-6xl space-y-6">
       <header className="border-b border-slate-200 pb-5">
@@ -317,11 +349,21 @@ function PaymentsContent() {
 
           {selectedOrder.summary.status === 'paid' ? <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4"><Badge variant="emerald">Lunas</Badge><p className="mt-2 text-sm text-emerald-950">Tidak ada sisa yang perlu dibayar.</p></div> : null}
           {selectedOrder.summary.status === 'unverified' ? <div className="flex gap-2 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" /><p>{selectedOrder.pricingPending ? 'Isi dan kunci harga minggu ini sebelum mencatat pembayaran.' : 'Saldo awal pesanan lama ini perlu diverifikasi sebelum pembayaran baru dapat dicatat.'}</p></div> : null}
+          {selectedOrder.canConfirmOpeningBalance && canMutate ? <section className="rounded-xl border border-amber-200 bg-amber-50 p-4" aria-label="Konfirmasi saldo awal">
+            {!openingForm ? <Button onClick={() => setOpeningForm(true)}>Konfirmasi saldo awal</Button> : <form onSubmit={submitOpeningBalance} className="space-y-4">
+              <div><h3 className="text-sm font-extrabold text-slate-950">Konfirmasi saldo awal</h3><p className="mt-1 text-sm text-slate-700">Isi jumlah yang sudah diterima untuk pesanan ini sebelum memakai catatan pembayaran baru. Ini bukan pembayaran baru hari ini.</p></div>
+              <div className="flex flex-wrap gap-2"><Button type="button" variant="secondary" size="sm" disabled={Boolean(saving)} onClick={() => setOpeningAmount('0')}>Belum dibayar · Rp0</Button><Button type="button" variant="secondary" size="sm" disabled={Boolean(saving)} onClick={() => setOpeningAmount(selectedOrder.totalAmount)}>Sudah lunas</Button></div>
+              <label className="block text-sm font-bold text-slate-800" htmlFor="opening-paid">Jumlah yang sudah dibayar (Rp)<input id="opening-paid" required inputMode="decimal" disabled={Boolean(saving)} value={openingAmount} onChange={(event) => setOpeningAmount(event.target.value.replace(',', '.'))} placeholder="Contoh: 30000; isi 0 jika belum dibayar" className="mt-1.5 min-h-11 w-full rounded-lg border border-slate-300 bg-white px-3 font-normal" /></label>
+              <p className="text-sm text-slate-700">Sisa setelah konfirmasi: <strong>{openingAmount !== '' && /^\d+(?:\.\d{1,2})?$/.test(openingAmount) && Number(openingAmount) <= Number(selectedOrder.totalAmount) ? formatCurrency(Number(selectedOrder.totalAmount) - Number(openingAmount)) : 'Isi nominal yang valid'}</strong></p>
+              <label className="block text-sm font-bold text-slate-800" htmlFor="opening-reason">Catatan pemeriksaan<textarea id="opening-reason" required maxLength={500} disabled={Boolean(saving)} value={openingReason} onChange={(event) => setOpeningReason(event.target.value)} placeholder="Contoh: diperiksa dari buku pembayaran September" rows={2} className="mt-1.5 w-full rounded-lg border border-slate-300 bg-white p-3 font-normal" /></label>
+              <div className="flex flex-wrap justify-end gap-2"><Button type="button" variant="ghost" disabled={Boolean(saving)} onClick={() => setOpeningForm(false)}>Batal</Button><Button type="submit" disabled={Boolean(saving) || !openingReason.trim() || openingAmount === ''}>{saving === 'opening' ? 'Mengonfirmasi…' : 'Konfirmasi saldo awal'}</Button></div>
+            </form>}
+          </section> : null}
           {selectedOrder.cancelledAt ? <div className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-900">Pesanan ini dibatalkan. Pembayaran baru tidak dapat dicatat.</div> : null}
 
           {canPay ? <form onSubmit={submitPayment} className="border-t border-slate-200 pt-5"><div className="flex items-center justify-between gap-3"><div><h3 className="font-extrabold text-slate-950">Catat pembayaran</h3><p className="mt-1 text-xs text-slate-500">Draf tersimpan di perangkat ini sampai berhasil dikirim.</p></div><Button type="button" size="sm" variant="subtle" onClick={() => setDraft((current) => ({ ...current, amount: selectedOutstanding ?? '' }))}>Lunasi sisa</Button></div><div className="mt-4 grid gap-3 sm:grid-cols-2"><label className="text-xs font-bold text-slate-700">Nominal<input required inputMode="decimal" value={draft.amount} onChange={(event) => setDraft((current) => ({ ...current, amount: event.target.value.replace(',', '.'), attempt: undefined }))} placeholder="Contoh: 50000" className="mt-1.5 min-h-11 w-full rounded-lg border border-slate-300 px-3 text-sm tabular-nums" /></label><label className="text-xs font-bold text-slate-700">Cara bayar<select value={draft.method} onChange={(event) => setDraft((current) => ({ ...current, method: event.target.value as PaymentDraft['method'], attempt: undefined }))} className="mt-1.5 min-h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm"><option value="cash">Tunai</option><option value="transfer">Transfer</option><option value="other">Lainnya</option></select></label><label className="text-xs font-bold text-slate-700 sm:col-span-2">Catatan <span className="font-normal text-slate-500">(opsional)</span><textarea value={draft.note} onChange={(event) => setDraft((current) => ({ ...current, note: event.target.value, attempt: undefined }))} rows={2} maxLength={1000} className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" /></label></div><div className="mt-4 flex justify-end"><Button type="submit" disabled={saving !== null} icon={<CircleDollarSign className="h-4 w-4" />}>{saving === 'payment' ? 'Menyimpan…' : 'Simpan pembayaran'}</Button></div></form> : null}
 
-          <section className="border-t border-slate-200 pt-5" aria-labelledby="history-heading"><div className="flex items-center gap-2"><History className="h-4 w-4 text-emerald-800" /><h3 id="history-heading" className="font-extrabold text-slate-950">Riwayat pembayaran</h3></div><div className="mt-3 divide-y divide-slate-100 border-y border-slate-200">{selectedOrder.payments.map((payment) => <div key={payment.id} className={`py-3 ${payment.reversedAt ? 'opacity-60' : ''}`}><div className="flex flex-wrap items-start justify-between gap-3"><div><div className="flex flex-wrap items-center gap-2"><p className={`font-black tabular-nums ${payment.reversedAt ? 'line-through text-slate-600' : 'text-slate-950'}`}>{formatCurrency(payment.amount)}</p><Badge variant={payment.reversedAt ? 'slate' : 'emerald'} size="sm">{payment.reversedAt ? 'Dibatalkan' : paymentMethodLabel(payment.method)}</Badge></div><p className="mt-1 text-xs text-slate-500">{dateTime(payment.occurredAt ?? payment.createdAt)}{payment.note ? ` · ${payment.note}` : ''}</p>{payment.reversedAt ? <p className="mt-1 text-xs font-semibold text-rose-800">Alasan: {payment.reversalReason}</p> : null}</div>{!payment.reversedAt ? <Button size="sm" variant="danger" onClick={() => { setReversingId(payment.id); setReversalReason(''); setReverseAttempt(null) }} icon={<RotateCcw className="h-3.5 w-3.5" />}>Balikkan</Button> : null}</div>{reversingId === payment.id ? <div className="mt-3 rounded-lg border border-rose-200 bg-rose-50 p-3"><label className="text-xs font-bold text-rose-900">Alasan pembalikan<textarea autoFocus value={reversalReason} onChange={(event) => { setReversalReason(event.target.value); setReverseAttempt(null) }} rows={2} maxLength={500} className="mt-1.5 w-full rounded-lg border border-rose-300 bg-white px-3 py-2 text-sm text-slate-900" /></label><div className="mt-3 flex justify-end gap-2"><Button size="sm" variant="ghost" onClick={() => { setReversingId(null); setReversalReason('') }}>Batal</Button><Button size="sm" variant="danger" disabled={saving !== null} onClick={() => void submitReversal(payment.id)}>{saving === 'reverse' ? 'Membalikkan…' : 'Konfirmasi pembalikan'}</Button></div></div> : null}</div>)}{selectedOrder.payments.length === 0 ? <p className="py-6 text-center text-sm text-slate-500">Belum ada pembayaran untuk pesanan ini.</p> : null}</div><p className="mt-2 text-xs text-slate-500">{activePayments.length} pembayaran aktif</p></section>
+          <section className="border-t border-slate-200 pt-5" aria-labelledby="history-heading"><div className="flex items-center gap-2"><History className="h-4 w-4 text-emerald-800" /><h3 id="history-heading" className="font-extrabold text-slate-950">Riwayat pembayaran</h3></div><div className="mt-3 divide-y divide-slate-100 border-y border-slate-200">{selectedOrder.payments.map((payment) => <div key={payment.id} className={`py-3 ${payment.reversedAt ? 'opacity-60' : ''}`}><div className="flex flex-wrap items-start justify-between gap-3"><div><div className="flex flex-wrap items-center gap-2"><p className={`font-black tabular-nums ${payment.reversedAt ? 'line-through text-slate-600' : 'text-slate-950'}`}>{formatCurrency(payment.amount)}</p><Badge variant={payment.reversedAt ? 'slate' : 'emerald'} size="sm">{payment.reversedAt ? 'Dibatalkan' : payment.source === 'legacy_opening_balance' ? 'Saldo awal terverifikasi' : paymentMethodLabel(payment.method)}</Badge></div><p className="mt-1 text-xs text-slate-500">{payment.source === 'legacy_opening_balance' ? `Dikonfirmasi ${dateTime(payment.createdAt)}` : dateTime(payment.occurredAt ?? payment.createdAt)}{payment.note ? ` · ${payment.note}` : ''}</p>{payment.reversedAt ? <p className="mt-1 text-xs font-semibold text-rose-800">Alasan: {payment.reversalReason}</p> : null}</div>{!payment.reversedAt ? <Button size="sm" variant="danger" onClick={() => { setReversingId(payment.id); setReversalReason(''); setReverseAttempt(null) }} icon={<RotateCcw className="h-3.5 w-3.5" />}>Balikkan</Button> : null}</div>{reversingId === payment.id ? <div className="mt-3 rounded-lg border border-rose-200 bg-rose-50 p-3"><label className="text-xs font-bold text-rose-900">Alasan pembalikan<textarea autoFocus value={reversalReason} onChange={(event) => { setReversalReason(event.target.value); setReverseAttempt(null) }} rows={2} maxLength={500} className="mt-1.5 w-full rounded-lg border border-rose-300 bg-white px-3 py-2 text-sm text-slate-900" /></label><div className="mt-3 flex justify-end gap-2"><Button size="sm" variant="ghost" onClick={() => { setReversingId(null); setReversalReason('') }}>Batal</Button><Button size="sm" variant="danger" disabled={saving !== null} onClick={() => void submitReversal(payment.id)}>{saving === 'reverse' ? 'Membalikkan…' : 'Konfirmasi pembalikan'}</Button></div></div> : null}</div>)}{selectedOrder.payments.length === 0 ? <p className="py-6 text-center text-sm text-slate-500">Belum ada pembayaran untuk pesanan ini.</p> : null}</div><p className="mt-2 text-xs text-slate-500">{activePayments.length} pembayaran aktif</p></section>
         </div>}
       </Modal>
     </div>
