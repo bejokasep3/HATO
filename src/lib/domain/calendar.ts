@@ -41,7 +41,7 @@ export function cycleTiming(cycle: CycleCalendarInput, now: Date) {
   const state = cycle.periodState ?? (cycle.status === 'open' ? 'open' : cycle.status === 'draft' ? 'draft' : ['closed', 'delivered', 'completed'].includes(cycle.status ?? '') ? 'closed' : null)
   const effectiveStatus: EffectiveCycleStatus = calendarStatus === 'upcoming' ? 'upcoming'
     : calendarStatus === 'ended' ? 'ended'
-      : state === 'closed' ? 'closed' : state === 'draft' ? 'awaiting_prices' : state === 'open' ? 'open' : 'legacy'
+      : state === 'closed' ? 'closed' : (state === 'draft' || state === 'open') ? 'open' : 'legacy'
   return {
     calendarStatus, effectiveStatus,
     acceptsNewOrders: calendarStatus === 'current' && (state === 'draft' || state === 'open'),
@@ -53,7 +53,7 @@ export function cycleTiming(cycle: CycleCalendarInput, now: Date) {
 }
 
 export function cycleStatusLabel(status: EffectiveCycleStatus): string {
-  return { upcoming: 'Akan datang', awaiting_prices: 'Minggu ini · Harga menyusul', open: 'Minggu ini · Dibuka', closed: 'Ditutup', ended: 'Berakhir', legacy: 'Perlu verifikasi' }[status]
+  return { upcoming: 'Akan datang', awaiting_prices: 'Minggu ini · Dibuka', open: 'Minggu ini · Dibuka', closed: 'Ditutup', ended: 'Berakhir', legacy: 'Perlu verifikasi' }[status]
 }
 
 export function cycleDates(periodStart: string) {

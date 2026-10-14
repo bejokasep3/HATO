@@ -1,5 +1,7 @@
 # Status implementasi
 
+14 October automatic prices: new weeks open immediately using the latest earlier saved prices. Open-week prices remain editable for new orders; existing bills stay unchanged. The two empty October draft weeks were activated with existing positive prices preserved and missing prices filled from earlier weeks. See evidence/2026-10-14-auto-week-prices.md.
+
 14 October simplified web flow: group targets also represent goods received; Pesanan allows historical edits/deletion and direct full settlement; Piutang lists outstanding orders. Paid corrections keep the corrected total paid, with audit history. See evidence/2026-10-14-simple-order-flow.md for rules and validation.
 
 14 October follow-up: web payments now includes explicit historical opening-balance confirmation with an amount and verification note. Actual historical amounts remain for managers to confirm. See evidence/2026-10-14-opening-balance.md for validation and limits.

@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import {
   AlertTriangle, ArrowRight, CalendarDays, CheckCircle2, CircleDollarSign,
-  ClipboardList, Clock3, Plus, RefreshCw, Users,
+  Clock3, Plus, RefreshCw, Users,
 } from 'lucide-react'
 import { StartWeekButton } from '@/components/StartWeekButton'
 import { apiGet } from '@/lib/api-client'
@@ -92,9 +92,6 @@ function nextAction(cycle: CycleSummary, now: Date) {
   if (timing.calendarStatus === 'upcoming') return { title: 'Minggu ini belum dimulai', detail: 'Pencatatan pesanan tersedia mulai Senin pukul 00.00 WIB.', href: `/cycles/${cycle.id}`, label: 'Periksa pengaturan', icon: CalendarDays }
   if (cycle.periodState === 'closed') {
     return { title: 'Ringkasan minggu yang ditutup', detail: 'Lihat pesanan historis dan rincian tagihan pada minggu ini.', href: '/payments', label: 'Periksa piutang', icon: CircleDollarSign }
-  }
-  if (cycle.periodState === 'draft') {
-    return { title: 'Catat pesanan minggu ini', detail: 'Jumlah pesanan bisa dicatat sekarang. Isi dan kunci harga nanti untuk menghitung tagihan.', href: `/cycles/${cycle.id}`, label: 'Isi harga & kunci tagihan', icon: ClipboardList }
   }
   return { title: 'Pesanan dan pembayaran', detail: 'Kelola pesanan, tandai lunas, dan pantau sisa barang dari target kelompok.', href: '/orders', label: 'Kelola pesanan', icon: CircleDollarSign }
 }
@@ -280,14 +277,14 @@ function DashboardContent() {
           <div className="flex items-center justify-between gap-3"><h2 id="finance-heading" className="font-extrabold text-slate-950">Uang masuk dan piutang</h2><CircleDollarSign className="h-5 w-5 shrink-0 text-emerald-800" /></div>
           {finances ? (
             <dl className="mt-4">
-              <div className="border-y border-slate-200 bg-slate-50 px-3 py-3"><dt className="text-xs font-semibold text-slate-600">Nilai pesanan</dt><dd className="mt-1 text-xl font-black tabular-nums text-slate-950 [overflow-wrap:anywhere]">{cycle.periodState === 'draft' ? 'Menunggu harga' : formatCurrency(finances.orderValue)}</dd><p className="mt-1 text-xs text-slate-600">{finances.orderCount} pesanan aktif</p></div>
+              <div className="border-y border-slate-200 bg-slate-50 px-3 py-3"><dt className="text-xs font-semibold text-slate-600">Nilai pesanan</dt><dd className="mt-1 text-xl font-black tabular-nums text-slate-950 [overflow-wrap:anywhere]">{formatCurrency(finances.orderValue)}</dd><p className="mt-1 text-xs text-slate-600">{finances.orderCount} pesanan aktif</p></div>
               <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,140px),1fr))] gap-3 py-4">
                 <div className="rounded-lg bg-emerald-50 p-3"><dt className="text-xs font-semibold text-emerald-900">Pembayaran diterima</dt><dd className="mt-1 font-extrabold tabular-nums text-emerald-950 [overflow-wrap:anywhere]">{formatCurrency(finances.receivedPayments)}</dd></div>
                 <div className="rounded-lg bg-rose-50 p-3"><dt className="text-xs font-semibold text-rose-900">Sisa diketahui</dt><dd className="mt-1 font-extrabold tabular-nums text-rose-950 [overflow-wrap:anywhere]">{formatCurrency(finances.knownOutstanding)}</dd></div>
               </div>
             </dl>
           ) : <p className="mt-4 text-sm text-slate-600">Ringkasan keuangan belum tersedia.</p>}
-          {finances?.totalIncomplete ? <div className="mt-3 flex gap-2 rounded-lg bg-amber-50 p-3 text-xs leading-5 text-amber-900"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" /><span>{finances.unknownBalanceCount} {cycle.periodState === 'draft' ? 'pesanan menunggu harga.' : 'saldo pesanan lama belum diverifikasi.'} Total piutang belum lengkap.</span></div> : null}
+          {finances?.totalIncomplete ? <div className="mt-3 flex gap-2 rounded-lg bg-amber-50 p-3 text-xs leading-5 text-amber-900"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" /><span>{finances.unknownBalanceCount} {'saldo pesanan lama belum diverifikasi.'} Total piutang belum lengkap.</span></div> : null}
           <Link href={cycleHref('/payments')} className="mt-3 inline-flex min-h-11 items-center text-sm font-bold text-emerald-800 hover:text-emerald-950">Buka rincian pembayaran</Link>
         </aside>
 

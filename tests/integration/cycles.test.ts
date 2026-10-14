@@ -37,7 +37,7 @@ test('cycle create, replay, open, target change and close leave legacy records i
   )
 
   const draft = await prisma.cycle.findUniqueOrThrow({ where: { id: cycleId }, include: { targets: true, weeklyPrices: true, rotationSchedules: true } })
-  assert.equal(draft.periodState, 'draft')
+  assert.equal(draft.periodState, 'open')
   assert.equal(draft.targets.length, 2)
   assert.equal(draft.weeklyPrices.length, 1)
   assert.equal(draft.weeklyPrices[0].targetGroupSnapshot, 'AYAM')
@@ -52,11 +52,6 @@ test('cycle create, replay, open, target change and close leave legacy records i
   const opened = await openCycle(prisma, { actorId, key: randomUUID(), id: cycleId, expectedVersion: 1 })
   assert.equal(opened.body.periodState, 'open')
   assert.equal(opened.body.version, 2)
-  await assert.rejects(
-    () => setCyclePrices(prisma, { actorId, key: randomUUID(), id: cycleId, expectedVersion: 2, items: [{ productId: draft.weeklyPrices[0].productId, consumerPrice: '60000.00', traderPrice: '60000.00' }] }),
-    (error: unknown) => error instanceof ServiceError && error.code === 'PRICES_LOCKED',
-  )
-
   const changed = await changeTargets(prisma, { actorId, key: randomUUID(), id: cycleId, expectedVersion: 2, reason: 'Target uji', targets: [{ groupCode: 'AYAM', quantity: '0.00' }, targets[1]] })
   assert.equal(changed.body.version, 3)
   assert((changed.body.targets as { groupCode: string; quantity: string }[]).some((item) => item.groupCode === 'AYAM' && item.quantity === '0.00'))

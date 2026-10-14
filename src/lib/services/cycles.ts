@@ -64,7 +64,7 @@ export async function createCycle(
   const targets = [...input.targets].sort((a, b) => a.groupCode.localeCompare(b.groupCode))
   return runIdempotent(prisma, {
     actorId: input.actorId, operation: 'cycle.create', key: input.key,
-    payload: { periodStart: input.periodStart, targets, notes: input.notes ?? null, ...(input.copyPreviousPrices === false ? { copyPreviousPrices: false } : {}) },
+    payload: { periodStart: input.periodStart, targets, notes: input.notes ?? null },
   }, async (tx) => {
     const existingWeek = await tx.cycle.findUnique({ where: { weekKey: dbDate(input.periodStart) } })
     if (existingWeek) throw new ServiceError(409, 'WEEK_ALREADY_EXISTS', 'Siklus minggu ini sudah ada')
@@ -74,11 +74,12 @@ export async function createCycle(
       throw new ServiceError(422, 'PRODUCT_MAPPING_REQUIRED', 'Pemetaan kelompok dan satuan produk belum lengkap', { count: unmapped.length })
     }
 
-    const previous = await tx.cycle.findFirst({
-      where: { periodStart: { lt: dbDate(input.periodStart) } },
-      orderBy: { periodStart: 'desc' }, include: { weeklyPrices: true },
+    const previous = await tx.weeklyPrice.findMany({
+      where: { cycle: { periodStart: { lt: dbDate(input.periodStart) } }, OR: [{ price: { gt: 0 } }, { consumerPrice: { gt: 0 } }] },
+      include: { cycle: { select: { periodStart: true } } }, orderBy: { cycle: { periodStart: 'desc' } },
     })
-    const previousPrices = new Map(previous?.weeklyPrices.map((price) => [price.productId, price]) ?? [])
+    const previousPrices = new Map<string, typeof previous[number]>()
+    for (const price of previous) if (!previousPrices.has(price.productId)) previousPrices.set(price.productId, price)
     const cycle = await tx.cycle.create({
       data: {
         label: cycleLabel(input.periodStart),
@@ -88,20 +89,22 @@ export async function createCycle(
         supplierDeadline: dbDate(dates.supplierDeadline),
         deliveryDate: dbDate(dates.deliveryDate),
         weekKey: dbDate(input.periodStart),
-        status: 'draft', periodState: 'draft', rulesVersion: 2,
+        status: 'open', periodState: 'open', rulesVersion: 2,
         notes: input.notes ?? null,
         targets: { create: targets.map((target) => ({ groupCode: target.groupCode, quantity: target.quantity, unit: target.groupCode === 'AYAM' ? 'kg' : 'bungkus' })) },
       }, include: { targets: true },
     })
 
     for (const product of products) {
-      const prior = input.copyPreviousPrices === false ? undefined : previousPrices.get(product.id)
+      const prior = previousPrices.get(product.id)
+      const consumer = prior?.consumerPrice?.gt(0) ? prior.consumerPrice : prior?.price
+      const trader = prior?.traderPrice?.gt(0) ? prior.traderPrice : consumer
       await tx.weeklyPrice.create({ data: {
         cycleId: cycle.id,
         productId: product.id,
-        price: prior?.price ?? 0,
-        consumerPrice: prior?.consumerPrice ?? null,
-        traderPrice: prior?.traderPrice ?? null,
+        price: consumer ?? 0,
+        consumerPrice: consumer ?? null,
+        traderPrice: trader ?? null,
         targetGroupSnapshot: product.targetGroup,
         unitSnapshot: product.unit,
         quantityScaleSnapshot: product.quantityScale,
@@ -120,7 +123,7 @@ export async function openCycle(prisma: PrismaClient, input: { actorId: string; 
   return runIdempotent(prisma, { actorId: input.actorId, operation: 'cycle.open', key: input.key, payload: { id: input.id, expectedVersion: input.expectedVersion } }, async (tx) => {
     const cycle = await lockedCycle(tx, input.id)
     checkVersion(cycle.version, input.expectedVersion)
-    if (cycle.periodState !== 'draft') throw new ServiceError(409, 'INVALID_CYCLE_STATE', 'Hanya siklus draf yang dapat dibuka')
+    if (!['draft', 'open'].includes(cycle.periodState!)) throw new ServiceError(409, 'INVALID_CYCLE_STATE', 'Siklus tertutup tidak dapat dibuka')
     if (cycle.targets.length !== 2 || !cycle.targets.some((target) => target.groupCode === 'AYAM') || !cycle.targets.some((target) => target.groupCode === 'TAHU')) {
       throw new ServiceError(422, 'TARGETS_REQUIRED', 'Target ayam dan tahu harus tersedia')
     }
@@ -130,6 +133,10 @@ export async function openCycle(prisma: PrismaClient, input: { actorId: string; 
       (price.consumerPrice ?? price.price).lte(0) || (price.traderPrice ?? price.consumerPrice ?? price.price).lte(0)
     ))
     if (!prices.length || unready.length) throw new ServiceError(422, 'PRICES_NOT_READY', 'Harga dan pemetaan produk aktif belum lengkap', { count: unready.length })
+    if (cycle.periodState === 'open') {
+      const updated = await tx.cycle.update({ where: { id: input.id }, data: { version: { increment: 1 } }, include: { targets: true } })
+      return { status: 200, body: cycleDto(updated) }
+    }
     const priceMap = new Map(prices.map((price) => [price.productId, price]))
     const pendingOrders = await tx.order.findMany({ where: { cycleId: input.id }, include: { items: true, payments: true } })
     const pricedLines: Prisma.Sql[] = []
@@ -224,7 +231,7 @@ export async function setCyclePrices(prisma: PrismaClient, input: {
   }, async (tx) => {
     const cycle = await lockedCycle(tx, input.id)
     checkVersion(cycle.version, input.expectedVersion)
-    if (cycle.periodState !== 'draft') throw new ServiceError(409, 'PRICES_LOCKED', 'Harga dibekukan setelah siklus dibuka')
+    if (cycle.periodState === 'closed') throw new ServiceError(409, 'CYCLE_CLOSED', 'Harga minggu yang ditutup tidak dapat diubah')
     const existing = await tx.weeklyPrice.findMany({ where: { cycleId: input.id, productId: { in: items.map((item) => item.productId) } } })
     if (existing.length !== items.length) throw new ServiceError(422, 'PRODUCT_NOT_IN_CYCLE', 'Produk harus ditambahkan eksplisit pada siklus')
     const before = existing.map((price) => ({ productId: price.productId, consumerPrice: price.consumerPrice?.toFixed(2), traderPrice: price.traderPrice?.toFixed(2) }))

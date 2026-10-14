@@ -127,10 +127,10 @@ export default function CyclesPage() {
                     <div><dt className="text-xs font-semibold text-slate-500">Target ayam</dt><dd className="mt-1 font-extrabold tabular-nums text-slate-900">{ayam ? `${Number(ayam.quantity).toLocaleString('id-ID')} ${ayam.unit}` : 'Belum diketahui'}</dd></div>
                     <div><dt className="text-xs font-semibold text-slate-500">Target tahu</dt><dd className="mt-1 font-extrabold tabular-nums text-slate-900">{tahu ? `${Number(tahu.quantity).toLocaleString('id-ID')} ${tahu.unit}` : 'Belum diketahui'}</dd></div>
                     <div><dt className="text-xs font-semibold text-slate-500">Pesanan aktif</dt><dd className="mt-1 font-extrabold tabular-nums text-slate-900">{cycle.totalOrders}</dd></div>
-                    <div><dt className="text-xs font-semibold text-slate-500">Nilai pesanan</dt><dd className="mt-1 font-extrabold tabular-nums text-slate-900">{cycle.periodState === 'draft' ? 'Menunggu harga' : formatCurrency(cycle.orderValue)}</dd></div>
+                    <div><dt className="text-xs font-semibold text-slate-500">Nilai pesanan</dt><dd className="mt-1 font-extrabold tabular-nums text-slate-900">{formatCurrency(cycle.orderValue)}</dd></div>
                   </dl>
                   <p className="mt-3 text-xs text-slate-600">Rekap {cycle.supplierDeadline ? formatDate(cycle.supplierDeadline, { weekday: 'long', day: 'numeric', month: 'short' }) : 'belum diketahui'} · barang tiba {formatDate(cycle.deliveryDate, { weekday: 'long', day: 'numeric', month: 'short' })}</p>
-                  {cycle.unknownBalanceCount > 0 ? <p className="mt-2 text-xs font-semibold text-amber-800">{cycle.unknownBalanceCount} {cycle.periodState === 'draft' ? 'pesanan menunggu harga' : 'saldo lama belum diverifikasi'}</p> : null}
+                  {cycle.unknownBalanceCount > 0 ? <p className="mt-2 text-xs font-semibold text-amber-800">{cycle.unknownBalanceCount} {'saldo lama belum diverifikasi'}</p> : null}
                 </div>
                 <Link href={`/cycles/${cycle.id}?cycleId=${cycle.id}`} className="mt-5 inline-flex items-center justify-end gap-1 text-sm font-bold text-emerald-800 hover:text-emerald-950">Buka minggu <ArrowRight className="h-4 w-4" /></Link>
               </article>

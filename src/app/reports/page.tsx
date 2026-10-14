@@ -310,7 +310,7 @@ export default function ReportsPage() {
         </div>
       </div>
 
-      {[targetData, financialData, memberData, receivableData][['targets', 'financial', 'member', 'receivable'].indexOf(activeTab)]?.unknownBalanceCount > 0 ? <p role="status" className="text-sm text-amber-800">Sebagian saldo belum diverifikasi atau masih menunggu harga. Daftar penagihan hanya memuat sisa tagihan yang terverifikasi.</p> : null}
+      {[targetData, financialData, memberData, receivableData][['targets', 'financial', 'member', 'receivable'].indexOf(activeTab)]?.unknownBalanceCount > 0 ? <p role="status" className="text-sm text-amber-800">Sebagian saldo lama belum diverifikasi. Daftar penagihan hanya memuat sisa tagihan yang terverifikasi.</p> : null}
 
       {/* Tactile Segmented Control Tabs */}
       <div className="inline-flex bg-slate-100/90 p-1 rounded-2xl border border-slate-200/80 gap-1 overflow-x-auto w-full sm:w-auto">

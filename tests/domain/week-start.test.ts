@@ -37,7 +37,7 @@ test('manager entry supports ended weeks but respects manual closure and future 
 test('drafts, manual closure, legacy weeks and year changes have automatic calendar status', () => {
   const week = { periodStart: '2026-12-28', periodState: 'draft' }
   const now = new Date('2027-01-01T12:00:00Z')
-  assert.equal(cycleTiming(week, now).effectiveStatus, 'awaiting_prices')
+  assert.equal(cycleTiming(week, now).effectiveStatus, 'open')
   assert.equal(cycleTiming(week, now).acceptsNewOrders, true)
   assert.equal(cycleTiming({ ...week, periodState: 'closed' }, now).effectiveStatus, 'closed')
   assert.equal(cycleTiming({ ...week, periodState: 'closed' }, now).acceptsNewOrders, false)
